@@ -74,14 +74,17 @@ s32 romfileStanConvert(u8 *data, u32 size, const char *name, const u8 *compiled)
         return 0;
     }
     put32(data, 0);
-    put32(data + 4, (u32) (uintptr_t) (data + first));
+    /* PORT: store OFFSETS, not pointers. stan.c builds a host
+     * StanPrefixRecord from these; a truncated 64-bit pointer here made
+     * stanBuildRoomData walk two 32-bit words as one pointer. */
+    put32(data + 4, first);
     for (i = 0; i < nrooms; i++) {
         u32 off = be32(data + 8 + i * 4);
         if (off < first || off >= size) {
             portConLogf("ge: romdata: stan %s: room %u tile offset 0x%X outside the tiles (0x%X..0x%X)\n", name, i, off, first, size);
             return 0;
         }
-        put32(data + 8 + i * 4, (u32) (uintptr_t) (data + off));
+        put32(data + 8 + i * 4, off);
     }
     /* the zero terminator after the rooms stays zero */
 
@@ -119,7 +122,7 @@ s32 romfileStanConvert(u8 *data, u32 size, const char *name, const u8 *compiled)
             /* header: compare pointer words as offsets from each image's base */
             for (i = 1; i < 2 + nrooms; i++) {
                 u32 a = *(const u32 *) (packed + i * 4) - (u32) (uintptr_t) packed;
-                u32 b = *(const u32 *) (data + i * 4) - (u32) (uintptr_t) data;
+                u32 b = *(const u32 *) (data + i * 4); /* data holds offsets */
                 if (a != b) hdrbad++;
             }
             for (i = first; i < o; i++) {

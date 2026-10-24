@@ -10,6 +10,12 @@
 #define IS_BIG_ENDIAN (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #endif
 
+/* PORT_LP64: a 64-bit host build (arm64). Fixes for 64-bit pointers and structure sizes are guarded with this
+ * rather than "!TARGET_N64", so the 32-bit PC and Android builds compile exactly the code they always did. */
+#if IS_64_BIT && !defined(TARGET_N64)
+#define PORT_LP64 1
+#endif
+
 #define DOUBLE_SIZE_ON_64_BIT(size) ((size) * (sizeof(void *) / 4))
 
 #endif /* PLATFORM_INFO_H */

@@ -154,6 +154,17 @@ static s32 portMusicPoolScale(void)
 #define MUSIC_CONFIG_USE_SFX_BANK         1
 #define MUSIC_CONFIG_USE_INSTRUMENT_BANK  1
 
+/* TEMP arm64 bring-up: the AL bank file and the Rare sequence table are
+ * 32-bit structure trees (offsets patched into pointers in place), which does
+ * not survive a 64-bit host. Build the synth/players as usual but skip
+ * loading the banks/sequences; the game runs silent until port/src gets a
+ * 64-bit bank converter. */
+#if defined(__ANDROID__) && defined(__aarch64__)
+#define GE_MUSIC_HAVE_32BIT_BANKS 0
+#else
+#define GE_MUSIC_HAVE_32BIT_BANKS 1
+#endif
+
 // TODO: what is this?
 // This is only used when playing a file (loading from ROM),
 // but the only thing used is the seqData pointer, the large array
@@ -772,6 +783,7 @@ void musicSeqPlayerInit(void)
 
     alHeapInit(&g_musicHeap, mempAddress, MUSIC_ALLOCATION_BYTES);
 
+#if GE_MUSIC_HAVE_32BIT_BANKS
     if (MUSIC_CONFIG_USE_SFX_BANK)
     {
         size = (u32)&_sfxtblSegmentRomStart - (u32)&_sfxctlSegmentRomStart;
@@ -791,9 +803,46 @@ void musicSeqPlayerInit(void)
         alBnkfNew(instrumentBank, (u8 *)&_instrumentstblSegmentRomStart);
         g_musicInstrumentBufferPtr = instrumentBank->bankArray[0];
     }
+#else
+    (void) sfxBank;
+    (void) instrumentBank;
+    /* Empty host-format bank: the synth/sequence players still need a bank
+     * with at least one instrument (__initFromBank walks instArray until it
+     * finds one, __setInstChanState reads its scalar fields). Playback is
+     * muted by g_sndBootswitchSound, so the zeroed instrument never voices. */
+    {
+        static ALBank s_dummyBank;
+        static ALInstrument s_dummyInst;
+        static ALSound s_dummySound;
+        static ALEnvelope s_dummyEnv;
+        static ALKeyMap s_dummyKey;
+        static ALWaveTable s_dummyWave;
+        static ALInstrument *s_dummyInstArray[1];
+        static ALSound *s_dummySoundArray[1];
+
+        s_dummyInstArray[0] = &s_dummyInst;
+        s_dummySoundArray[0] = &s_dummySound;
+        s_dummyInst.soundArray[0] = &s_dummySound;
+        s_dummyInst.soundCount = 1;
+        s_dummyInst.volume = AL_VOL_FULL;
+        s_dummySound.envelope = &s_dummyEnv;
+        s_dummySound.keyMap = &s_dummyKey;
+        s_dummySound.wavetable = &s_dummyWave;
+        s_dummySound.samplePan = AL_PAN_CENTER;
+        s_dummyBank.instCount = 1;
+        s_dummyBank.sampleRate = 22050;
+        s_dummyBank.instArray[0] = &s_dummyInst;
+        (void) s_dummyInstArray;
+        (void) s_dummySoundArray;
+
+        g_musicSfxBufferPtr = &s_dummyBank;
+        g_musicInstrumentBufferPtr = &s_dummyBank;
+    }
+#endif /* GE_MUSIC_HAVE_32BIT_BANKS */
 
     // this area based on auReadSeqFileHeader
 
+#if GE_MUSIC_HAVE_32BIT_BANKS
     // is this sizeof(RareALSeqBankFile) ? which implies the struct isn't right...
     size = 0x10;
     g_musicDataTable = alHeapAlloc(&g_musicHeap, 1, size);
@@ -831,7 +880,11 @@ void musicSeqPlayerInit(void)
     // end auReadSeqFileHeader
 
     musicSeqFileNew(g_musicDataTable, (u8*)&_musicsampletblSegmentRomStart);
-    
+#else
+    (void) tblSegmentSize;
+    (void) tblSegmentRomStartAddress;
+#endif /* GE_MUSIC_HAVE_32BIT_BANKS */
+
     size = TRACK_1_DATA_SEQ_SIZE_BYTES;
     g_musicXTrack1SeqData = alHeapAlloc(&g_musicHeap, 1, size);
 
@@ -843,6 +896,7 @@ void musicSeqPlayerInit(void)
     // This 'for' loops seems to load track offsets, and lengths one time at init.
     // devkit example does this on demand.
     // see auSeqPlayerSetFile in n64devkit\ultra\usr\src\pr\demos_old\nnsample1\audio.c
+#if GE_MUSIC_HAVE_32BIT_BANKS
     for (ui = 0; ui < NUM_MUSIC_TRACKS; ui++)
     {
         g_musicTrackLength[ui] = g_musicDataTable->seqArray[ui].uncompressed_len;
@@ -854,6 +908,9 @@ void musicSeqPlayerInit(void)
             g_musicTrackLength[ui]++;
         }
     }
+#else
+    (void) ui;
+#endif
 
     synconfig.maxVVoices = 0;
     synconfig.maxPVoices = MUSIC_SYN_CONFIG_MAX_P_VOICES * MUSIC_POOL_SCALE;
@@ -926,6 +983,16 @@ void musicSeqPlayerInit(void)
     }
 #endif
     amStartAudioThread();
+
+#if defined(__ANDROID__) && defined(__aarch64__)
+    /* TEMP arm64 bring-up: the synth and players are up, but the 32-bit bank
+     * data was not loaded (GE_MUSIC_HAVE_32BIT_BANKS=0), so make every play
+     * path a no-op instead of posting events against NULL banks. */
+    {
+        extern s8 g_sndBootswitchSound;
+        g_sndBootswitchSound = 1;
+    }
+#endif
 }
 
 /**

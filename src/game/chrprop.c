@@ -1,4 +1,4 @@
-#include <ultra64.h>
+﻿#include <ultra64.h>
 #include <assert.h>
 #include <bondgame.h>
 #include <bondtypes.h>
@@ -282,12 +282,36 @@ PropRecord* chrpropAllocate(void)
 {
     PropRecord* prop;
 
-    if (g_FreeProps)
+    /* PORT: the free list is a pool of PropRecords; a pointer outside it can
+     * only come from a 64-bit layout break upstream, so drop it rather than
+     * hand it to callers that will dereference it. */
+    if (g_FreeProps != NULL
+        && (g_FreeProps < &g_Props[0] || g_FreeProps >= &g_Props[MAX_PROPS]))
+    {
+        extern void portConLogf(const char *fmt, ...);
+        static s32 said;
+        if (!said) {
+            said = 1;
+            portConLogf("ge: chrpropAllocate: free list head %p is outside the pool - reset\n",
+                    (void *) g_FreeProps);
+        }
+        g_FreeProps = NULL;
+    }
+
+    if (g_FreeProps != NULL)
     {
         prop = g_FreeProps;
         g_FreeProps = prop->prev;
 
-        prop->prev = NULL;
+        if (g_FreeProps != NULL
+            && (g_FreeProps < &g_Props[0] || g_FreeProps >= &g_Props[MAX_PROPS]))
+        {
+            g_FreeProps = NULL;
+        }
+        else
+        {
+            prop->prev = NULL;
+        }
         prop->next = NULL;
         prop->parent = NULL;
         prop->child = NULL;
@@ -300,6 +324,13 @@ PropRecord* chrpropAllocate(void)
     }
 
     return NULL;
+}
+
+
+/* PORT: is this a pointer into the static prop pool? */
+int chrpropIsPoolProp(PropRecord *prop)
+{
+    return prop != NULL && prop >= &g_Props[0] && prop < &g_Props[MAX_PROPS];
 }
 
 
@@ -4007,4 +4038,5 @@ ObjectRecord * sub_GAME_7F03FAB0(struct coord3d *pos, s32 RoomID)
 
     return NULL;
 }
+
 

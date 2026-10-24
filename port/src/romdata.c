@@ -473,6 +473,11 @@ static int romdataParseTables(const u8 *rom, u32 romsize)
      * workspace); src is read-only here - the inflater never writes src */
     n = decompressdata((u8 *) src, sCdata, NULL);
     sCdataSize = n;
+    /* ROM display lists (font, logos, gun barrel) are 8-byte N64 commands. */
+    {
+        extern void portWireDLRegister(const void *lo, const void *hi);
+        portWireDLRegister(sCdata, sCdata + sCdataSize);
+    }
     if (n != ROMDATA_CDATA_SIZE) {
         portConLogf("ge: romdata: cdata inflated to %u bytes, stock is %u - data segment layout differs (JP/EU cart, or a code mod)\n",
                 n, ROMDATA_CDATA_SIZE);

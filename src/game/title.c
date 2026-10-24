@@ -29,6 +29,8 @@
 
 extern signed short sins(unsigned short x);
 
+void portEnsureIntroMatrices(void);
+
 
 // bss
 //CODE.bss:80069550
@@ -64,7 +66,9 @@ s32 dword_CODE_bss_80069588;
 //CODE.bss:8006958C
 s32 dword_CODE_bss_8006958C;
 //CODE.bss:80069590
-s32 virtualaddress;
+/* PORT: host pointer width - this is the rareware-logo segment base that
+ * gSPSegment feeds to the renderer; s32 truncated it on 64-bit hosts. */
+uintptr_t virtualaddress;
 
 /**
  * Address 80069594
@@ -362,6 +366,34 @@ extern u8 *D_02004FE8;
 extern u8 *D_02005FF0;
 
 Gfx *load_display_rare_logo(Gfx *gdl, s32 arg1, s32 arg2, s32 arg3, s32 arg4) {
+    {
+        static int said;
+        if (!said) {
+            extern void portConLogf(const char *fmt, ...);
+            said = 1;
+            portConLogf("ge: rare: gdl=%p basic=%p basicptr=%p sizeofGfx=%d\n",
+                    (void *) gdl, (void *) dlBasicGeometry, (void *) &dlBasicGeometry,
+                    (int) sizeof(Gfx));
+            portConLogf("ge: rare mats: %p %p %p idx=%d persp=%p\n",
+                    (void *) matrixBufferRareLogo0, (void *) matrixBufferRareLogo1,
+                    (void *) matrixBufferRareLogo2, (int) D_8002A7D0,
+                    (void *) &matrixBufferRareLogo0[D_8002A7D0]);
+            portConLogf("ge: rare vals: l0=%p l1=%p l2=%p g0=%p g1=%p bd=%p bond=%p\n",
+                    (void *) matrixBufferRareLogo0, (void *) matrixBufferRareLogo1,
+                    (void *) matrixBufferRareLogo2, (void *) matrixBufferGunbarrel0,
+                    (void *) matrixBufferGunbarrel1, (void *) matrixBufferIntroBackdrop,
+                    (void *) matrixBufferIntroBond);
+        }
+    }
+    {
+        static int said;
+        if (said < 10) {
+            extern void portConLogf(const char *fmt, ...);
+            said++;
+            portConLogf("ge: rare[%d]: gdl=%p m=%p idx=%d\n", said, (void *) gdl,
+                    (void *) &matrixBufferRareLogo0[D_8002A7D0], (int) D_8002A7D0);
+        }
+    }
     cameraPosition1[2] = arg3;
     gSPDisplayList(gdl++, &dlBasicGeometry);
     gdl = clear_framebuffer_black(gdl);
@@ -411,13 +443,17 @@ Gfx *load_display_rare_logo(Gfx *gdl, s32 arg1, s32 arg2, s32 arg3, s32 arg4) {
 extern void *_rarewarelogoSegmentRomStart;
 extern void *_rarewarelogoSegmentStart;
 extern void *_rarewarelogoSegmentEnd; 
-void setupRarewareLogoData(s32 address, s32 size) {
+void setupRarewareLogoData(void *address, s32 size) {
     gunbarrel_mode = 0;
     g_TitleX = 880.0f;
     D_8002A89C = -40.0f;
     intro_eye_counter = 0;
-    virtualaddress = address;
-    romCopy(virtualaddress, &_rarewarelogoSegmentRomStart, ALIGN64_V2((u32)&_rarewarelogoSegmentEnd - (u32)&_rarewarelogoSegmentStart));
+    virtualaddress = (uintptr_t) address;
+    {
+        extern void portWireDLUnregister(const void *lo, const void *hi);
+        portWireDLUnregister(address, (const u8 *) address + size);
+    }
+    romCopy((void *) virtualaddress, &_rarewarelogoSegmentRomStart, ALIGN64_V2((u32)&_rarewarelogoSegmentEnd - (u32)&_rarewarelogoSegmentStart));
 
 #ifndef TARGET_N64
     { /* the logo data is typed host references throughout (the segment
@@ -445,7 +481,7 @@ Gfx *retrieve_display_rareware_logo(Gfx *gdl)
 #endif
 
     D_8002A7D0 = (1 - D_8002A7D0);
-    gSPSegment(gdl++, SPSEGMENT_GETITLE, osVirtualToPhysical(virtualaddress));
+    gSPSegment(gdl++, SPSEGMENT_GETITLE, osVirtualToPhysical((void *) virtualaddress));
     if ((gunbarrel_mode == 0) || (gunbarrel_mode == 1)) {
         s32 var1;
         s32 var2;
@@ -464,6 +500,9 @@ Gfx *retrieve_display_rareware_logo(Gfx *gdl)
         if (var2 < 0) {
             var2 = 0;
         }
+        {
+            portEnsureIntroMatrices();
+        }
         gdl = load_display_rare_logo(gdl, 403, 488, g_TitleX, (var1 * var2) / 255);
         if (intro_eye_counter++ >= RAREWARE_LOGO_EYE_COUNT1) {
             if (intro_eye_counter >= RAREWARE_LOGO_EYE_COUNT2) {
@@ -481,6 +520,38 @@ Gfx *retrieve_display_rareware_logo(Gfx *gdl)
 s32 isGunBarrelInMode2(void) {
     return (gunbarrel_mode == 2);
 }
+
+
+#ifndef TARGET_N64
+/* The intro matrix pointers have been seen replaced with stale stack/.bss
+ * addresses before the first rare-logo frame (intermittent). Until the
+ * writer is found, detect an out-of-arena pointer and reallocate the whole
+ * set so the intro can run; the log names the bad values. */
+static int portIntroPtrOk(const void *p)
+{
+    uintptr_t v = (uintptr_t) p;
+    return v >= 0x50000000u && v < 0x54000000u;
+}
+
+void portEnsureIntroMatrices(void)
+{
+    extern void alloc_intro_matrices(void);
+    if (!portIntroPtrOk(matrixBufferRareLogo0) || !portIntroPtrOk(matrixBufferRareLogo1) ||
+        !portIntroPtrOk(matrixBufferRareLogo2) || !portIntroPtrOk(matrixBufferGunbarrel0) ||
+        !portIntroPtrOk(matrixBufferGunbarrel1) || !portIntroPtrOk(matrixBufferIntroBackdrop) ||
+        !portIntroPtrOk(matrixBufferIntroBond))
+    {
+        extern void portConLogf(const char *fmt, ...);
+        portConLogf("ge: intro matrices corrupted (l0=%p l1=%p l2=%p g0=%p g1=%p) - reallocating\n",
+                (void *) matrixBufferRareLogo0, (void *) matrixBufferRareLogo1,
+                (void *) matrixBufferRareLogo2, (void *) matrixBufferGunbarrel0,
+                (void *) matrixBufferGunbarrel1);
+        alloc_intro_matrices();
+    }
+}
+#else
+void portEnsureIntroMatrices(void) { }
+#endif
 
 
 #ifdef TARGET_N64
@@ -512,6 +583,12 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
     struct texpool texturePool;
     s32 temp_t9;
     s32 startframe;
+
+    portEnsureIntroMatrices();
+    {
+        extern void portWireDLUnregister(const void *lo, const void *hi);
+        portWireDLUnregister(gfxBuffer, gfxBuffer + bufferSize);
+    }
     
     gunbarrel_mode = 2;
     
@@ -529,8 +606,15 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
     createGunbarrelRenderHole(barrelDisplayListPtr, 0x1E);
     
     gunbarrelgfxListPointer = (Gfx*)gfxBuffer;
-    bufferSize -= 0x100;
-    gfxBuffer += 0x100;
+    /* 0x1E vertices make 3 batches of G_VTX + 14 triangles + ENDDL. The N64
+     * reservation was 0x100 bytes for 8-byte Gfx; a host Gfx is 16 bytes, so
+     * the list needs twice that or it overruns the following pool/model data
+     * and the walker runs into vertex data. */
+    {
+        s32 dlbytes = 0x100 * (s32) (sizeof(Gfx) / 8);
+        bufferSize -= dlbytes;
+        gfxBuffer += dlbytes;
+    }
     
 #ifdef TARGET_N64
     sub_GAME_7F01BFF8(gunbarrelgfxListPointer, barrelDisplayListPtr + 0x80000000, 0x1E);

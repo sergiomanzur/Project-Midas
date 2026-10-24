@@ -2551,7 +2551,7 @@ void texLoad(s32 *updateword, struct texpool *pool)
         extern void portHitchNote(int cat, unsigned long long us);
         const unsigned long long hitchT0 = portProfNow(); /* hitchlog.c */
 #endif
-        alignedcompbuffer = (u8 *) (((u32)compbuffer + 0xF) >> 4 << 4);
+        alignedcompbuffer = (u8 *) (((uintptr_t) compbuffer + 0xF) & ~(uintptr_t) 0xF);
 
         if (alignedcompbuffer);
         if (tex);
@@ -2582,6 +2582,28 @@ void texLoad(s32 *updateword, struct texpool *pool)
             v[2] = (f32)nextoffset;
             v[3] = (f32)(nextoffset - thisoffset);
             ge_dbg_vec("texload num/this/next/size", v, 4);
+        }
+        {   /* A bad pair (out-of-range texture number, or the table's end)
+             * made nextoffset - thisoffset huge; the romCopy then smashed the
+             * 4000-byte stack buffer and texReadBits walked from garbage.
+             * Treat it like the out-of-memory path: point the texture at the
+             * pool start and skip the load. */
+            s32 span = nextoffset - thisoffset;
+            extern void portConLogf(const char *fmt, ...);
+
+            if (span <= 0 || span > (s32) sizeof(compbuffer) - 32)
+            {
+                static s32 badspan;
+                if (badspan < 12)
+                {
+                    badspan++;
+                    portConLogf("ge: texLoad texnum=%d bad span %d (this=%u next=%u, table %u)\n",
+                            (s32) g_TexNumToLoad, (s32) span,
+                            (unsigned) thisoffset, (unsigned) nextoffset, (unsigned) MAX_TEXTURES);
+                }
+                *updateword = osVirtualToPhysical(pool->start);
+                return;
+            }
         }
 #endif
 

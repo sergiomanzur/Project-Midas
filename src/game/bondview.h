@@ -256,6 +256,15 @@ struct hand
   s32 field_C04;
   s32 volley;  // Number of bullets discharged in a row. For pistols, it's always 1 even if the fire button is held.
   coord3d item_related;
+
+#ifdef PORT_LP64
+  /* PORT: the cart overlays a Model on field_B68..field_B84 (0x20 bytes) and its rwdata
+   * on modeldatas..field_C04 (32 words). Both are far larger on a 64-bit host (pointer
+   * members, 8-byte rwdata records), so the overlay ran over the neighbouring fields.
+   * The host keeps its own model and rwdata here, after the cart-layout members. */
+  struct Model hostmodel;
+  s32 hostdatas[512];
+#endif
 };
 
 typedef struct InvItem {
@@ -2335,7 +2344,29 @@ struct player
   s32 field_2A74;
   s32 field_2A78;
   s32 field_2A7C;
+#ifdef PORT_LP64
+  /* PORT: the cart overlays the watch's Model on 0x230..0x2ec and its rwdata after it
+   * (something_with_watch_object_instance .. field_2E8, animInit's 0xc0-byte Model).
+   * The host Model/rwdata are larger, so they live here, after the cart-layout members.
+   * Model.render_pos was field_23C and Model.scale was watch_scale_destination. */
+  struct Model hostwatchmodel;
+  s32 hostwatchdatas[512];
+  /* head-bob "gait" model: the cart overlays it on `model`..field_650 with rwdata at field_654 */
+  struct Model hostgaitmodel;
+  s32 hostgaitdatas[256];
+#endif
 };
+#ifdef PORT_LP64
+#define WATCHMODEL(p) (&(p)->hostwatchmodel)
+#define GAITMODEL(p) (&(p)->hostgaitmodel)
+#define GAITDATAS(p) ((p)->hostgaitdatas)
+#define watch_scale_destination hostwatchmodel.scale
+#else
+#define WATCHMODEL(p) ((Model *) (&(p)->something_with_watch_object_instance))
+#define GAITMODEL(p) ((Model *) (&(p)->model))
+#define GAITDATAS(p) (&(p)->field_654)
+#endif
+
 
 struct firing_anim_struct {
     struct weapon_firing_animation_table * pointer;

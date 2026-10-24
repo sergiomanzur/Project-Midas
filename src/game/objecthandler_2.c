@@ -13,6 +13,9 @@
 #include "objecthandler.h"
 #include "quaternion.h"
 #include "tex.h"
+#ifndef TARGET_N64
+#include "port_model64.h"
+#endif
 
 #ifndef TARGET_N64
 #include <stdlib.h>
@@ -32,12 +35,14 @@
  * reloading a model reconverts an already-clean DL and leaks the previous
  * allocation.
  */
-static Gfx *portConvertModelGdl(Gfx *src, struct texpool *pool)
+static Gfx *portConvertModelGdlRec(Gfx *src, struct texpool *pool, u8 *base, s32 depth)
 {
+    const u32 *wire = (const u32 *) src;
     s32 n = 0;
     Gfx *dst;
 
-    while ((u8)(src[n].words.w0 >> 24) != (u8)G_ENDDL)
+    /* the model DL is an 8-byte N64 command stream (a host Gfx is 16 bytes) */
+    while ((u8) (wire[n * 2] >> 24) != (u8) G_ENDDL)
     {
         n++;
         if (n > 0x4000)
@@ -60,8 +65,41 @@ static Gfx *portConvertModelGdl(Gfx *src, struct texpool *pool)
         return NULL;
     }
 
-    texLoadFromGdl(src, n * (s32)sizeof(Gfx), dst, pool);
+    texLoadFromGdl(src, n * 8, dst, pool);
+
+    /* Nested G_DL commands still name 0x05000000-based lists in the model
+     * image; convert those too, otherwise the renderer walks an 8-byte list
+     * with its 16-byte Gfx stride and misreads a matrix/texture argument. */
+    if (base != NULL && depth < 8)
+    {
+        Gfx *g = dst;
+
+        while ((u8) (g->words.w0 >> 24) != (u8) G_ENDDL)
+        {
+            if ((u8) (g->words.w0 >> 24) == (u8) G_DL)
+            {
+                u32 w1 = (u32) g->words.w1;
+
+                if ((w1 >> 24) == 0x05)
+                {
+                    Gfx *sub = portConvertModelGdlRec((Gfx *) (base + (w1 - 0x05000000u)),
+                                                      pool, base, depth + 1);
+                    if (sub != NULL)
+                    {
+                        g->words.w1 = (uintptr_t) sub;
+                    }
+                }
+            }
+            g++;
+        }
+    }
+
     return dst;
+}
+
+static Gfx *portConvertModelGdl(Gfx *src, struct texpool *pool)
+{
+    return portConvertModelGdlRec(src, pool, portModelLastBase(), 0);
 }
 
 /* Persistent texture pool for compiled-in model files, whose texture loads and
@@ -358,7 +396,13 @@ void load_object_fill_header(struct ModelFileHeader *objheader, u8 *name, u8* ds
 
             if (converted)
             {
+#if UINTPTR_MAX > 0xFFFFFFFFu
+                /* 64-bit: the wire image is 32-bit throughout, so build a
+                 * host node/rodata graph instead of promoting in place. */
+                portModelToHost(objheader, (u8 *) filedata, poolsz, (const char *) name);
+#else
                 sub_GAME_7F075A90(objheader, 0x5000000, (u32) filedata);
+#endif
             }
             else
             {

@@ -1,4 +1,4 @@
-#ifndef _CHRAI_H_
+﻿#ifndef _CHRAI_H_
 #define _CHRAI_H_
 #include <ultra64.h>
 
@@ -74,14 +74,27 @@ Jump to Routine:
 00000009	pppppppp
 [p]ointer to another animation routine where processing resumes
 */
+#if UINTPTR_MAX > 0xFFFFFFFFu
+/* TEST BUILD ONLY (64-bit host): the routine tables are u32[] and cannot hold
+ * a 64-bit address in a static initializer. Emit a null target so the engine
+ * can be built and smoke-tested on real arm64 hardware; animations that jump
+ * do nothing. Must be replaced with a real 64-bit representation before any
+ * release. */
+#define MONJUMPTO(p) 0x9, 0
+#else
 #define MONJUMPTO(p) 0x9, p
+#endif
 /*
 Jump on Chance:
 0000000A	pppppppp	0000xxxx
 [p]ointer to another animation routine where processing resumes
 [x] value to test against a random value.  Jump if rand < xxxx
 */
+#if UINTPTR_MAX > 0xFFFFFFFFu
+#define MONJUMPCHANCE(p,x) 0xA, 0, x
+#else
 #define MONJUMPCHANCE(p,x) 0xA, p, x
+#endif
 /*
 Loop:
 0000000B
@@ -285,6 +298,7 @@ PropRecord        *chrpropGetActiveTail(void);
 void               propsDefragRoomProps(void);
 void               chraiGetPropRoomIds(PropRecord *self, s32 *roomids);
 void               chrpropFree(PropRecord *prop);
+int                chrpropIsPoolProp(PropRecord *prop);
 void               chrpropDisable(PropRecord *prop);
 f32                chrpropBBOXGetXmin(ModelRoData_BoundingBoxRecord *modelBoundingBox);
 f32                chrpropBBOXGetYmin(ModelRoData_BoundingBoxRecord *modelBoundingBox);
@@ -304,3 +318,4 @@ void               projectRectCornersTo2D(struct coord3d *arg0, struct coord2d *
 void               sub_GAME_7F03E6A0(PropRecord *prop);
 struct PropRecord *propFindForInteract(void);
 #endif
+

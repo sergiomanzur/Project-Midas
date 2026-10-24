@@ -8,8 +8,17 @@
 #define MODEL_SPARE_SLOTS          30
 #define ANIM_MODEL_SPARE_SLOTS     10
 
-#define MODEL_SPARE_RWDATALEN      0x14
-#define ANIM_MODEL_SPARE_RWDATALEN 0x8c
+/* PORT: rwdata records with pointers are twice as large on a 64-bit host
+ * (and numRecords counts 4-byte cells), so the N64 spare capacities no longer
+ * fit a character model and modelmgrInstantiateModel* returned NULL. */
+#if UINTPTR_MAX > 0xFFFFFFFFu
+#define RWDATA_SPARE_SCALE 2
+#else
+#define RWDATA_SPARE_SCALE 1
+#endif
+
+#define MODEL_SPARE_RWDATALEN      (0x14 * RWDATA_SPARE_SCALE)
+#define ANIM_MODEL_SPARE_RWDATALEN (0x8c * RWDATA_SPARE_SCALE)
 
 
 void modelmgrResetSlotCounts(void)

@@ -13,6 +13,14 @@ void alloc_intro_matrices(void)
     matrixBufferGunbarrel1    = mempAllocBytesInBank(0x80, MEMPOOL_STAGE);
     matrixBufferIntroBackdrop = mempAllocBytesInBank(0x80, MEMPOOL_STAGE);
     matrixBufferIntroBond     = mempAllocBytesInBank(0x80, MEMPOOL_STAGE);
+    {
+        extern void portConLogf(const char *fmt, ...);
+        portConLogf("ge: intromtx logo0=%p g0=%p logo1=%p logo2=%p g1=%p bd=%p bond=%p\n",
+                (void *) matrixBufferRareLogo0, (void *) matrixBufferGunbarrel0,
+                (void *) matrixBufferRareLogo1, (void *) matrixBufferRareLogo2,
+                (void *) matrixBufferGunbarrel1, (void *) matrixBufferIntroBackdrop,
+                (void *) matrixBufferIntroBond);
+    }
 }
 
 

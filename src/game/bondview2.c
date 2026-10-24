@@ -1,4 +1,4 @@
-#include <ultra64.h>
+﻿#include <ultra64.h>
 #include <math.h>
 #include <bondtypes.h>
 #include <boss.h>
@@ -351,6 +351,15 @@ f32 g_MpSwirlForwardSpeed;
 f32 g_MpSwirlDistance;
 
 #define ALIGN64_V3(val) (((val) | 0x3f) ^ 0x3f)
+#ifdef PORT_LP64
+/* PORT: the cart reserves 0xc0 bytes for a Model here (0xfb = 0xc0 + 0x3b, 0xc7 = 0xc0 + 7); the host Model is larger,
+ * and its tail overran the rwdata placed right after it (anim_translation_scale landed in the header rwdata). */
+#define PORT_MODEL_RESERVE_FB ((s32) sizeof(Model) + 0x3b)
+#define PORT_MODEL_RESERVE_C7 ((s32) sizeof(Model) + 7)
+#else
+#define PORT_MODEL_RESERVE_FB 0xfb
+#define PORT_MODEL_RESERVE_C7 0xc7
+#endif
 
 void solo_char_load(void)
 {
@@ -550,7 +559,7 @@ void solo_char_load(void)
                 load_object_fill_header(headheader, (u8 *)c_item_entries[head].filename, weaponbuf0 + cursor, size0 - cursor, &pool);
                 cursor = ALIGN64_V3(get_pc_buffer_remaining_value((u8 *)c_item_entries[head].filename) + cursor + 0x3f);
                 model  = (Model *)(weaponbuf0 + cursor);
-                cursor = ALIGN64_V3(cursor + 0xfb);
+                cursor = ALIGN64_V3(cursor + PORT_MODEL_RESERVE_FB);
                 modelCalculateRwDataLen(bodyheader);
                 modelCalculateRwDataLen(headheader);
 
@@ -627,7 +636,7 @@ void solo_char_load(void)
             {
                 helddst      = cursor;
                 helddst      = ((s32)weaponbuf0) + helddst;
-                cursor       = ALIGN64_V3(cursor + 0xc7);
+                cursor       = ALIGN64_V3(cursor + PORT_MODEL_RESERVE_C7);
                 pitemheader  = get_ptr_itemheader_in_hand(GUNLEFT);
                 *pitemheader = *PitemZ_entries[prop].header;
                 load_object_fill_header(pitemheader, (u8 *)PitemZ_entries[prop].filename, weaponbuf0 + cursor, size0 - cursor, &pool);
@@ -980,8 +989,8 @@ void bondviewSetCameraMode(s32 arg0)
 
             modelSetAnimation(
                 g_CurrentPlayer->bodyModel,
-                objecthandlerGetModelAnim((Model *) &g_CurrentPlayer->model),
-                objecthandlerGetModelGunhand(&g_CurrentPlayer->model),
+                objecthandlerGetModelAnim((Model *) GAITMODEL(g_CurrentPlayer)),
+                objecthandlerGetModelGunhand(GAITMODEL(g_CurrentPlayer)),
                 0.0f,
                 0.5f,
                 0.0f);
@@ -4018,6 +4027,14 @@ void sub_GAME_7F07E7CC(void) {
         return_null();
     }
 #endif
+#ifdef PORT_LP64
+    memset(g_CurrentPlayer->hostwatchdatas, 0, sizeof(g_CurrentPlayer->hostwatchdatas));
+    animInit(WATCHMODEL(g_CurrentPlayer), itemheader, (u32 *) g_CurrentPlayer->hostwatchdatas);
+    modelSetScale(WATCHMODEL(g_CurrentPlayer), c_item_entries[41].scale * 0.10000001f);
+    modelSetAnimation(WATCHMODEL(g_CurrentPlayer), (ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_bond_watch], 0, 0.0f, 0.5f * watch_transition_time, 0.0f);
+    g_CurrentPlayer->step_in_view_watch_animation = 0;
+    return;
+#endif
     animInit((Model *)((u8 *)g_CurrentPlayer + 0x230), itemheader, (u32 *)((u8 *)g_CurrentPlayer + 0x2ec));
     modelSetScale((Model *)((u8 *)g_CurrentPlayer + 0x230), c_item_entries[41].scale * 0.10000001f);
     modelSetAnimation((Model *)((u8 *)g_CurrentPlayer + 0x230), (ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_bond_watch], 0, 0.0f, 0.5f * watch_transition_time, 0.0f);
@@ -4099,7 +4116,7 @@ void bondviewStepWatchAnimation(void)
             }
         }
 
-        modelSetAnimFrame2((void*)&g_CurrentPlayer->something_with_watch_object_instance, g_CurrentPlayer->pause_animation_counter, 0.0f);
+        modelSetAnimFrame2((void*)WATCHMODEL(g_CurrentPlayer), g_CurrentPlayer->pause_animation_counter, 0.0f);
     }
 }
 
@@ -11714,7 +11731,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
     watchpos = ZeroCoordWatchPos;
     objheader = get_ptr_itemheader_in_hand(GUNLEFT);
     nodepos = (f32 *) objheader->Switches[3];
-    rwdata = modelGetNodeRwData((Model *) (&g_CurrentPlayer->something_with_watch_object_instance), (ModelNode *) nodepos);
+    rwdata = modelGetNodeRwData(WATCHMODEL(g_CurrentPlayer), (ModelNode *) nodepos);
     perspmtx = dynAllocateMatrix();
     {
         f32 waspect;
@@ -11766,10 +11783,10 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         matrix_4x4_set_position_and_rotation_around_y(watchpos.f, (360.0f - g_CurrentPlayer->vv_theta) * 0.017453292f, &watchmtx);
         matrix_4x4_multiply_homogeneous_in_place(camGetWorldToScreenMtxf(), &watchmtx);
         matrices = dynAllocate(objheader->numMatrices << 6);
-        bondviewSelectCuff((Model *) (&g_CurrentPlayer->something_with_watch_object_instance), objheader, 4);
+        bondviewSelectCuff(WATCHMODEL(g_CurrentPlayer), objheader, 4);
         renderdata.basemtx = &watchmtx;
         renderdata.mtxlist = matrices;
-        subcalcmatrices(&renderdata, (Model *) (&g_CurrentPlayer->something_with_watch_object_instance));
+        subcalcmatrices(&renderdata, WATCHMODEL(g_CurrentPlayer));
         nodepos = (f32 *) objheader->Switches[0]->Data;
         time = watch_time_0;
         t = g_CurrentPlayer->pause_watch_related_adjust / 20.0f;
@@ -11838,7 +11855,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
             renderdata.envcolour.word = g_CurrentPlayer->tileColor.a | (((g_CurrentPlayer->tileColor.r << 24) | (g_CurrentPlayer->tileColor.g << 16)) | (g_CurrentPlayer->tileColor.b << 8));
         }
     
-        subdraw(&renderdata, (Model *) (&g_CurrentPlayer->something_with_watch_object_instance));
+        subdraw(&renderdata, WATCHMODEL(g_CurrentPlayer));
         gdl = renderdata.gdl;
         nodepos2 = (f32 *) objheader->Switches[2]->Data;
         finalmtx = dynAllocateMatrix();
@@ -11858,7 +11875,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         matrix_4x4_7F058C88();
         gdl = draw_watch_current_page(gdl, finalmtx, (g_CurrentPlayer->watch_animation_state == 5) || (g_CurrentPlayer->watch_animation_state == 12));
         matrix_4x4_7F058C64();
-        bondviewTransformManyPosToViewMatrix(g_CurrentPlayer->field_23C, objheader->numMatrices);
+        bondviewTransformManyPosToViewMatrix(WATCHMODEL(g_CurrentPlayer)->render_pos, objheader->numMatrices);
         matrix_4x4_7F058C88();
     }
  
@@ -12707,8 +12724,8 @@ blood_frame_held:;
                 }
             }
         }
-        if (modelGetAnimFrame(&g_CurrentPlayer->model) >=
-            modelGetAnimEndFrame(&g_CurrentPlayer->model))
+        if (modelGetAnimFrame(GAITMODEL(g_CurrentPlayer)) >=
+            modelGetAnimEndFrame(GAITMODEL(g_CurrentPlayer)))
         {
             if (g_CurrentPlayer->redbloodfinished)
             {
@@ -13689,7 +13706,7 @@ Gfx* hudmsgBottomRender(Gfx* arg0)
                 PORT_HUD_ANCHOR(arg0, PORT_HUD_ANCHOR_LEFT);
             }
 #endif
-            arg0 = draw_blackbox_to_screen(arg0, (s32) &view_left, (s32) &view_vert, (s32) &view_horiz, (s32) &view_top);
+            arg0 = draw_blackbox_to_screen(arg0, &view_left, &view_vert, &view_horiz, &view_top);
             arg0 = combiner_bayer_lod_perspective(textRenderOutlined(arg0, &view_left, &view_vert, stringbuffer_lowerleft[status_bar_text_buffer_index], BONDVIEW_2ND_FONTTABLE(status_bar_text_buffer_index), BONDVIEW_1ST_FONTTABLE(status_bar_text_buffer_index), -1, 0x646464FFU, (s16) (s32) viGetX(), (s16) viGetY(), 0, 0));
 #ifndef TARGET_N64
             if (portMsgAnchor)
@@ -14628,3 +14645,4 @@ void SurroundWithExplosions(int delay)
     g_SurroundBondWithExplosionsTicks = delay + g_GlobalTimer;
     g_PlayerTickExplodeCreatePosition = 0;
 }
+

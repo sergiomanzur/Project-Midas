@@ -29,8 +29,8 @@ struct levelentry
 #define BG_SEG_IS_OFFSET(off) \
     ((u32) (off) < 0x00400000u || (((u32) (off)) >> 24) == 0x0Fu)
 #define BG_SEG_TO_PTR(base, off) \
-    (BG_SEG_IS_OFFSET(off) ? ((void *) (((u32) (base)) + (((u32) (off)) & 0x00FFFFFFu))) \
-                           : ((void *) (u32) (off)))
+    (BG_SEG_IS_OFFSET(off) ? ((void *) ((uintptr_t) (base) + (((u32) (off)) & 0x00FFFFFFu))) \
+                           : ((void *) (uintptr_t) (off)))
 #endif
 
 typedef struct RoomVtxBatchBounds {

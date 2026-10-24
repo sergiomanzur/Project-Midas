@@ -830,6 +830,13 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
     s32         lightPending = FALSE;
     Gfx        *in           = src;
     Gfx        *out          = dst;
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    /* 64-bit: every source is an 8-byte N64 command stream (model files and
+     * the bg staging copy) while a host Gfx is 16 bytes. Read each command
+     * into `cur`; the body below then sees a normal host Gfx. */
+    const u32 *wire = (const u32 *) src;
+    Gfx        cur;
+#endif
 #ifndef TARGET_N64
     /* debug (GE_DUMP_BOND): per-conversion G_SETTEX accounting */
     s32 dbgSeen = 0, dbgFound = 0, dbgMissed = 0, dbgFirstMiss = -1;
@@ -846,6 +853,11 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
 
     while (count > 0)
     {
+#if UINTPTR_MAX > 0xFFFFFFFFu
+        cur.words.w0 = wire[0];
+        cur.words.w1 = wire[1];
+        in = &cur;
+#endif
 #ifdef TARGET_N64
         switch (*(u8 *)in)
 #else
@@ -1141,6 +1153,10 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
                 break;
         }
 
+#if UINTPTR_MAX > 0xFFFFFFFFu
+        wire += 2;   /* one 8-byte command per iteration (the body's in++ is
+                      * just how the 32-bit code walks its own view) */
+#endif
         count--;
     }
 
@@ -1159,7 +1175,7 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
         lightFixtureEntryEnd(out);
     }
 
-    return ((s32)out) - ((s32)dst);
+    return (s32) ((u8 *) out - (u8 *) dst);
 }
 
 
@@ -1168,32 +1184,22 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
 */
 void texCopyGdls(Gfx *arg0, Gfx *arg1, s32 arg2)
 {
-    arg2 = (arg2 >> 3);
-    arg0 = arg0 + (arg2 - 1);
-    arg1 = arg1 + (arg2 - 1);
+    s32 n = (arg2 >> 3);
+    /* byte-addressed: the buffers are 8-byte N64 command streams, not host
+     * Gfx arrays (a Gfx is 16 bytes on a 64-bit host). */
+    const u32 *s = (const u32 *) ((u8 *) arg0 + (u32) (n - 1) * 8u);
+    u32 *d = (u32 *) ((u8 *) arg1 + (u32) (n - 1) * 8u);
 
-    while (arg2--)
+    while (n-- > 0)
     {
-#ifdef TARGET_N64
-        arg1->force_structure_alignment = arg0->force_structure_alignment;
-#else
-        /* PC: the only callers are the room loaders (bg.c), staging the
-         * decompressed room GDL, whose words are big-endian. Convert to native
-         * words during the staging copy, since every walker reads words
-         * natively and raw BE commands would otherwise pass through. */
-        {
-            const u32 *s = (const u32 *) arg0;
-            u32 *d = (u32 *) arg1;
-            u32 w0 = s[0];
-            u32 w1 = s[1];
+        u32 w0 = s[0];
+        u32 w1 = s[1];
 
-            d[0] = (w0 >> 24) | ((w0 >> 8) & 0xFF00u) |
-                   ((w0 & 0xFF00u) << 8) | (w0 << 24);
-            d[1] = (w1 >> 24) | ((w1 >> 8) & 0xFF00u) |
-                   ((w1 & 0xFF00u) << 8) | (w1 << 24);
-        }
-#endif
-        arg1--;
-        arg0--;
+        d[0] = (w0 >> 24) | ((w0 >> 8) & 0xFF00u) |
+               ((w0 & 0xFF00u) << 8) | (w0 << 24);
+        d[1] = (w1 >> 24) | ((w1 >> 8) & 0xFF00u) |
+               ((w1 & 0xFF00u) << 8) | (w1 << 24);
+        s -= 2;
+        d -= 2;
     }
 }

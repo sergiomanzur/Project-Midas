@@ -4,8 +4,8 @@ project(ge007 C)
 # GoldenEye PC port build (docs/port/PORT-PLAN.md). Built 32-bit first, which
 # defuses the codebase's pointer<->s32 casts and keeps Gfx 8 bytes.
 # The N64 ROM build stays on the classic Makefile; this file also builds the
-# Android arm64-v8a shell library (libmain.so) with SDL2 + GLES3.
-# armeabi-v7a is available only as an explicit experimental bring-up.
+# Android shell library (libmain.so) with SDL2 + GLES3 for arm64-v8a and
+# armeabi-v7a. The shipped APK is universal: both ABIs in one file.
 #
 # Android is NOT a parity claim: the 32-bit-only layout contract in the asset
 # lane and the interpreter's pointer<->s32 assumptions need their own audit.
@@ -17,9 +17,10 @@ include(cmake/android-sdl2.cmake)
 set(CMAKE_C_STANDARD 11)
 
 if(ANDROID)
-    # arm64-v8a is the primary Android target. armeabi-v7a is an explicit
-    # experimental bring-up (32-bit pointers keep the decompiled structures
-    # closer to their original width) and must never become the release ABI.
+    # arm64-v8a is the primary Android target. armeabi-v7a is the 32-bit
+    # bring-up kept for older devices: it must never be the release's only ABI
+    # (that is what made v1.0.1 uninstallable on 64-bit-only phones), but the
+    # universal APK carries both.
     if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
         set(GE_ANDROID_ARM64 ON)
         message(STATUS "Android ABI: arm64-v8a (primary)")

@@ -863,7 +863,10 @@ extern void		osSetTLBASID(s32);
 
 /* Address translation routines and macros */
 
-extern u32		 osVirtualToPhysical(void *);
+/* PORT: pointer-width on 64-bit hosts - the result is stored in display-list
+ * words, segment registers and DMA descriptors, all of which hold host
+ * pointers there. */
+extern uintptr_t	 osVirtualToPhysical(void *);
 extern void *		 osPhysicalToVirtual(u32);
 
 #ifdef TARGET_N64
@@ -875,12 +878,14 @@ extern void *		 osPhysicalToVirtual(u32);
 #else
 /* PC port: no KSEG mapping - host pointers pass through unchanged, matching
  * the identity osVirtualToPhysical shim. The N64 arithmetic wrapped host
- * pointers into wild addresses (first-frame viewport crash). */
-#define	OS_K0_TO_PHYSICAL(x)	((u32)(x))
-#define	OS_K1_TO_PHYSICAL(x)	((u32)(x))
+ * pointers into wild addresses (first-frame viewport crash). Pointer-width:
+ * these values end up in display-list words (title.c's gunbarrel gSPDisplayList
+ * is exactly one) and a u32 cast truncates stack/static pointers on 64-bit. */
+#define	OS_K0_TO_PHYSICAL(x)	((uintptr_t)(x))
+#define	OS_K1_TO_PHYSICAL(x)	((uintptr_t)(x))
 
-#define	OS_PHYSICAL_TO_K0(x)	((void *)(x))
-#define	OS_PHYSICAL_TO_K1(x)	((void *)(x))
+#define	OS_PHYSICAL_TO_K0(x)	((void *)(uintptr_t)(x))
+#define	OS_PHYSICAL_TO_K1(x)	((void *)(uintptr_t)(x))
 #endif
 
 /* I/O operations */
@@ -902,10 +907,10 @@ extern u32 		osPiGetStatus(void);
 extern s32		osPiGetDeviceType(void);
 extern s32		osPiRawWriteIo(u32, u32);
 extern s32		osPiRawReadIo(u32, u32 *);
-extern s32		osPiRawStartDma(s32, u32, void *, u32);
+extern s32		osPiRawStartDma(s32, uintptr_t, void *, u32);
 extern s32		osPiWriteIo(u32, u32);
 extern s32		osPiReadIo(u32, u32 *);
-extern s32		osPiStartDma(OSIoMesg *, s32, s32, u32, void *, u32,
+extern s32		osPiStartDma(OSIoMesg *, s32, s32, uintptr_t, void *, u32,
 				     OSMesgQueue *);
 extern void		osCreatePiManager(OSPri, OSMesgQueue *, OSMesg *, s32);
 

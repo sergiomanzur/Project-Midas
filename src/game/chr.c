@@ -1,4 +1,4 @@
-#include <ultra64.h>
+﻿#include <ultra64.h>
 #include <PR/gbi.h>
 #include <bondgame.h>
 #include <bondconstants.h>
@@ -1688,7 +1688,7 @@ PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct
     arg0->pos.f[2] = arg2->f[2];
     arg0->stan = arg4;
 
-    sub_GAME_7F06FF5C(arg1, (s32) sub_GAME_7F01FC10);
+    sub_GAME_7F06FF5C(arg1, (void *) sub_GAME_7F01FC10);
 
     arg1->unk00 = 0xA;
     arg1->chr = var_s0;
@@ -1799,7 +1799,7 @@ PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct
 /**
  * Address 0x7F0203B8.
  */
-PropRecord * chrAllocate( Model * arg0, coord3d * arg1, f32 arg2,  StandTile * arg3, s32 arg4)
+PropRecord * chrAllocate( Model * arg0, coord3d * arg1, f32 arg2,  StandTile * arg3, AIRecord *arg4)
 {
     PropRecord * ret;
     s32 phi_a0;
@@ -1808,7 +1808,7 @@ PropRecord * chrAllocate( Model * arg0, coord3d * arg1, f32 arg2,  StandTile * a
 
     if (ret != 0)
     {
-        ret = init_GUARDdata_with_set_values(ret, arg0, arg1, arg2, arg3, arg4);
+        ret = init_GUARDdata_with_set_values(ret, arg0, arg1, arg2, arg3, (struct AIListRecord *) arg4);
     }
 
     return ret;
@@ -4119,3 +4119,4 @@ s32 chrGetOnscreenRenderBounds(PropRecord *arg0, struct coord3d *arg1, struct co
 
     return 0;
 }
+

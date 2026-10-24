@@ -268,7 +268,7 @@ void        chrSetMoving(ChrRecord *guard,s32 param_2);
 f32         getAnimationRate(void);
 void        setAnimationRate(f32);
 PropRecord *init_GUARDdata_with_set_values(PropRecord *, Model *, coord3d *, f32 arg2, StandTile * arg3, struct AIListRecord *arg4);
-PropRecord *chrAllocate(struct Model * arg0, coord3d * arg1, f32 arg2, StandTile * arg3, s32 arg4);
+PropRecord *chrAllocate(struct Model * arg0, coord3d * arg1, f32 arg2, StandTile * arg3, AIRecord *arg4);
 void        chrSetHiddenToRandom(ChrRecord *arg0);
 void        chrRemoved7F022E1C(f32 arg0);
 void        chrDecrementAnimationTablePointerCount(void);

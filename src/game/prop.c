@@ -231,7 +231,22 @@ void domakedefaultobj(s32 arg0, ObjectRecord *arg1, s32 cmdindex)
             }
 
             modelSetScale(arg1->model, arg1->model->scale * sp78);
-            chrpropReparent(var_v0, sp6C->prop);
+            /* PORT: a 64-bit layout break can hand back a pointer outside the
+             * prop pool; reparenting it faults. Only link real pool entries. */
+            if (chrpropIsPoolProp(var_v0) && chrpropIsPoolProp(sp6C->prop))
+            {
+                chrpropReparent(var_v0, sp6C->prop);
+            }
+            else
+            {
+                extern void portConLogf(const char *fmt, ...);
+                static s32 said;
+                if (!said) {
+                    said = 1;
+                    portConLogf("ge: domakedefaultobj: bogus prop %p (obj %d) - not reparented\n",
+                            (void *) var_v0, (s32) arg1->obj);
+                }
+            }
         }
         #ifdef DEBUG
         else
@@ -581,6 +596,34 @@ void weaponAssignToHome(s32 arg0, WeaponObjRecord* weapon, s32 cmdindex)
                 }
             }
 
+#ifdef PORT_LP64
+            extern s32 g_portSetupFromRom;
+            if (g_portSetupFromRom)
+            {
+                /* PORT: the setup record is the 0x88-byte N64 layout (prop/model/mtx/... are
+                 * 4-byte words), but WeaponObjRecord is the wider host struct, so weaponnum
+                 * read as 0 (ITEM_UNARMED) and guards could not fire. Rebuild a host record
+                 * in a weapon slot from the wire fields. */
+                extern WeaponObjRecord blank_08_object_preset_1;
+                extern WeaponObjRecord *weaponCreate(bool musthaveprop, bool musthavemodel, ModelFileHeader *modeldef);
+                const u8 *raw = (const u8 *) weapon;
+                WeaponObjRecord *h = weaponCreate(FALSE, FALSE, NULL);
+
+                if (h != NULL)
+                {
+                    *h = blank_08_object_preset_1;
+                    memcpy(h, raw, 0x10); /* header, obj, pad, flags, flags2 */
+                    memcpy(&h->maxdamage, raw + 0x70, 4);
+                    memcpy(&h->damage, raw + 0x74, 4);
+                    memcpy(&h->shadecol, raw + 0x78, 4);
+                    memcpy(&h->nextcol, raw + 0x7C, 4);
+                    h->weaponnum = (s8) raw[0x80];
+                    h->LinkedWeaponType = (s8) raw[0x81];
+                    memcpy(&h->timer, raw + 0x82, 2);
+                    weapon = h;
+                }
+            }
+#endif
             weaponLoadProjectileModels((s8)weapon->weaponnum);
             sub_GAME_7F052030(weapon, chr);
         }
@@ -1442,6 +1485,11 @@ void setupDoor(s32 arg0, struct DoorRecord *door, s32 arg2)
  * onto the RAM copy, but the compiled-in setup files already hold real
  * pointers. Those must pass through unchanged, since adding the base again
  * doubles them and crashes. */
+#ifdef PORT_LP64
+#define PORT_PNAME_HOSTCOPY g_portSetupFromRom /* 4-byte wire name table vs 8-byte host pname */
+#else
+#define PORT_PNAME_HOSTCOPY 0
+#endif
 #ifdef TARGET_N64
 #define SETUP_PROMOTE(base, val) ((void *) (((u32) (base)) + ((u32) (val))))
 #else
@@ -1452,7 +1500,9 @@ void setupDoor(s32 arg0, struct DoorRecord *door, s32 arg2)
 /* ROM loading (port/src/romfile_setup.c): a setup loaded from the ROM is the
  * N64 image (offsets), so it uses the N64 promotion. Set right after the file loads, below. */
 s32 g_portSetupFromRom;
-#define SETUP_PROMOTE(base, val) (g_portSetupFromRom ? (void *) (((u32) (base)) + ((u32) (val))) : (void *) (u32) (val))
+s32 g_portNumWaypoints; /* PORT: waypoints in the host table (0 = compiled setup) */
+s32 g_portNumWaygroups;
+#define SETUP_PROMOTE(base, val) (g_portSetupFromRom ? (void *) ((uintptr_t) (base) + (u32) (val)) : (void *) (uintptr_t) (val))
 
 /* bring-up (GE_DUMP_BOND): called at load milestones to find which step
  * corrupts the path waypoints data. */
@@ -1959,15 +2009,221 @@ void proplvreset2(enum LEVELID stageId)
          * The setup file stores every internal reference as a byte offset from
          * the start of the file, so rebase them all onto the RAM copy at
          * local_stage.
+         *
+         * PORT: the cart header is ten 32-bit offsets; the host stagesetup has
+         * 8-byte pointer fields, so a ROM-served setup must be read as words
+         * (romfileSetupConvert leaves them native-endian). Its AI list table is
+         * 8-byte {offset, id} entries while AIListRecord is 16 bytes host-side,
+         * so a host copy is built here.
          */
-        g_CurrentSetup.pathwaypoints = SETUP_PROMOTE(local_stage, local_stage->pathwaypoints);
-        g_CurrentSetup.waypointgroups = SETUP_PROMOTE(local_stage, local_stage->waypointgroups);
-        g_CurrentSetup.intro = SETUP_PROMOTE(local_stage, local_stage->intro);
-        g_CurrentSetup.propDefs = SETUP_PROMOTE(local_stage, local_stage->propDefs);
-        g_CurrentSetup.patrolpaths = SETUP_PROMOTE(local_stage, local_stage->patrolpaths);
-        g_CurrentSetup.ailists = SETUP_PROMOTE(local_stage, local_stage->ailists);
-        g_CurrentSetup.pads = SETUP_PROMOTE(local_stage, local_stage->pads);
-        g_CurrentSetup.boundpads = SETUP_PROMOTE(local_stage, local_stage->boundpads);
+        if (g_portSetupFromRom)
+        {
+            u32 *wh = (u32 *) local_stage;
+            u8 *base = (u8 *) local_stage;
+
+            g_CurrentSetup.intro = SETUP_PROMOTE(local_stage, wh[2]);
+            g_CurrentSetup.propDefs = SETUP_PROMOTE(local_stage, wh[3]);
+
+            /* waypoints: wire entries are 16 bytes {padID, neighbours*32, groupNum, dist} */
+            {
+                static waypoint s_Wp[4096];
+                u32 *w = wh[0] ? (u32 *) (base + wh[0]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 4095 && (s32) w[n * 4] >= 0)
+                    {
+                        s_Wp[n].padID = (s32) w[n * 4];
+                        s_Wp[n].neighbours = SETUP_PROMOTE(local_stage, w[n * 4 + 1]);
+                        s_Wp[n].groupNum = (s32) w[n * 4 + 2];
+                        s_Wp[n].dist = (s32) w[n * 4 + 3];
+                        n++;
+                    }
+                    s_Wp[n].padID = -1;
+                    s_Wp[n].neighbours = NULL;
+                    s_Wp[n].groupNum = 0;
+                    s_Wp[n].dist = 0;
+                    g_CurrentSetup.pathwaypoints = s_Wp;
+#ifndef TARGET_N64
+                    {
+                        extern void portConLogf(const char *fmt, ...);
+                        extern s32 g_portNumWaypoints;
+                        s32 q, mx = -1;
+                        g_portNumWaypoints = n;
+                        for (q = 0; q < n; q++) {
+                            s32 *nb = (s32 *) s_Wp[q].neighbours;
+                            s32 k;
+                            if (nb == NULL) continue;
+                            for (k = 0; k < 64 && nb[k] >= 0; k++) {
+                                if (nb[k] > mx) mx = nb[k];
+                            }
+                        }
+                        portConLogf("ge: wp n=%d maxNeighbour=%d hdr=%u,%u,%u,%u derived=%d gderived=%d\n",
+                                n, mx, wh[0], wh[1], wh[2], wh[3],
+                                (wh[1] > wh[0]) ? (s32) ((wh[1] - wh[0]) / 16) : -1,
+                                (wh[2] > wh[1]) ? (s32) ((wh[2] - wh[1]) / 12) : -1);
+                    }
+#endif
+                }
+                else
+                {
+                    g_CurrentSetup.pathwaypoints = NULL;
+                }
+            }
+
+            /* waygroups: wire entries are 12 bytes {neighbours*32, waypoints*32, dist} */
+            {
+                static waygroup s_Wg[1024];
+                u32 *w = wh[1] ? (u32 *) (base + wh[1]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 1023 && w[n * 3] != 0)
+                    {
+                        s_Wg[n].neighbours = SETUP_PROMOTE(local_stage, w[n * 3]);
+                        s_Wg[n].waypoints = SETUP_PROMOTE(local_stage, w[n * 3 + 1]);
+                        s_Wg[n].dist = (s32) w[n * 3 + 2];
+                        n++;
+                    }
+                    s_Wg[n].neighbours = NULL;
+                    s_Wg[n].waypoints = NULL;
+                    s_Wg[n].dist = 0;
+                    g_CurrentSetup.waypointgroups = s_Wg;
+                    { extern s32 g_portNumWaygroups; g_portNumWaygroups = n; }
+#ifndef TARGET_N64
+                    {
+                        extern void portConLogf(const char *fmt, ...);
+                        s32 q;
+                        portConLogf("ge: wg n=%d\n", n);
+                        for (q = 0; q < 6 && q < n; q++) {
+                            s32 *nb = (s32 *) s_Wg[q].neighbours;
+                            portConLogf("ge: wg[%d] nb=%p wp=%p ids=%d,%d,%d\n", q,
+                                    (void *) nb, (void *) s_Wg[q].waypoints,
+                                    nb ? nb[0] : -9, nb ? nb[1] : -9, nb ? nb[2] : -9);
+                        }
+                    }
+#endif
+                }
+                else
+                {
+                    g_CurrentSetup.waypointgroups = NULL;
+                }
+            }
+
+            /* patrol paths: wire entries are 8 bytes {waypoints*32, u8 ID, u8 isLoop, u16 len} */
+            {
+                static PathRecord s_Paths[1024];
+                u32 *w = wh[4] ? (u32 *) (base + wh[4]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 1023 && w[n * 2] != 0)
+                    {
+                        u8 *b = (u8 *) w + n * 8;
+
+                        s_Paths[n].waypoints = SETUP_PROMOTE(local_stage, w[n * 2]);
+                        s_Paths[n].ID = b[4];
+                        s_Paths[n].isLoop = b[5];
+                        s_Paths[n].len = (u16) (b[6] | (b[7] << 8));
+                        n++;
+                    }
+                    memset(&s_Paths[n], 0, sizeof(PathRecord));
+                    g_CurrentSetup.patrolpaths = s_Paths;
+                }
+                else
+                {
+                    g_CurrentSetup.patrolpaths = NULL;
+                }
+            }
+
+            /* pads: wire entries are 44 bytes (3 x coord3d, plink*32, stan*32) */
+            {
+                static PadRecord s_Pads[1024];
+                u8 *w = wh[6] ? (u8 *) (base + wh[6]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 1023 && *(u32 *) (w + 0x24) != 0)
+                    {
+                        memcpy(&s_Pads[n].pos, w, 36);
+                        s_Pads[n].plink = SETUP_PROMOTE(local_stage, *(u32 *) (w + 0x24));
+                        s_Pads[n].stan = SETUP_PROMOTE(local_stage, *(u32 *) (w + 0x28));
+                        n++;
+                        w += 44;
+                    }
+                    memset(&s_Pads[n], 0, sizeof(PadRecord));
+                    g_CurrentSetup.pads = s_Pads;
+                }
+                else
+                {
+                    g_CurrentSetup.pads = NULL;
+                }
+            }
+
+            /* bound pads: wire entries are 68 bytes (pad fields + bbox) */
+            {
+                static BoundPadRecord s_BoundPads[512];
+                u8 *w = wh[7] ? (u8 *) (base + wh[7]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 511 && *(u32 *) (w + 0x24) != 0)
+                    {
+                        memcpy(&s_BoundPads[n].pos, w, 36);
+                        s_BoundPads[n].plink = SETUP_PROMOTE(local_stage, *(u32 *) (w + 0x24));
+                        s_BoundPads[n].stan = SETUP_PROMOTE(local_stage, *(u32 *) (w + 0x28));
+                        memcpy(&s_BoundPads[n].bbox, w + 0x2c, sizeof(bbox));
+                        n++;
+                        w += 68;
+                    }
+                    memset(&s_BoundPads[n], 0, sizeof(BoundPadRecord));
+                    g_CurrentSetup.boundpads = s_BoundPads;
+                }
+                else
+                {
+                    g_CurrentSetup.boundpads = NULL;
+                }
+            }
+
+            {
+                static AIListRecord s_HostAiLists[512];
+                u32 *w = wh[5] ? (u32 *) (base + wh[5]) : NULL;
+                int n = 0;
+
+                if (w != NULL)
+                {
+                    while (n < 511 && w[n * 2] != 0)
+                    {
+                        s_HostAiLists[n].ailist = SETUP_PROMOTE(local_stage, w[n * 2]);
+                        s_HostAiLists[n].ID = (s32) w[n * 2 + 1];
+                        n++;
+                    }
+                    s_HostAiLists[n].ailist = NULL;
+                    s_HostAiLists[n].ID = 0;
+                    g_CurrentSetup.ailists = s_HostAiLists;
+                }
+                else
+                {
+                    g_CurrentSetup.ailists = NULL;
+                }
+            }
+        }
+        else
+        {
+            g_CurrentSetup.pathwaypoints = SETUP_PROMOTE(local_stage, local_stage->pathwaypoints);
+            g_CurrentSetup.waypointgroups = SETUP_PROMOTE(local_stage, local_stage->waypointgroups);
+            g_CurrentSetup.intro = SETUP_PROMOTE(local_stage, local_stage->intro);
+            g_CurrentSetup.propDefs = SETUP_PROMOTE(local_stage, local_stage->propDefs);
+            g_CurrentSetup.patrolpaths = SETUP_PROMOTE(local_stage, local_stage->patrolpaths);
+            g_CurrentSetup.ailists = SETUP_PROMOTE(local_stage, local_stage->ailists);
+            g_CurrentSetup.pads = SETUP_PROMOTE(local_stage, local_stage->pads);
+            g_CurrentSetup.boundpads = SETUP_PROMOTE(local_stage, local_stage->boundpads);
+        }
 
 #ifndef TARGET_N64
         /* a ROM-served setup is a fresh copy every load (the N64 way) -
@@ -2056,25 +2312,67 @@ void proplvreset2(enum LEVELID stageId)
 #endif
 
         // Pad names and bound names are optional. An offset of 0 means absent.
-        if (local_stage->padnames != 0)
         {
-            g_CurrentSetup.padnames = SETUP_PROMOTE(local_stage, local_stage->padnames);
-        }
-        else
-        {
-            g_CurrentSetup.padnames = NULL;
+            u32 padname_off = g_portSetupFromRom ? ((u32 *) local_stage)[8]
+                                                 : (u32) (uintptr_t) local_stage->padnames;
+            u32 boundname_off = g_portSetupFromRom ? ((u32 *) local_stage)[9]
+                                                   : (u32) (uintptr_t) local_stage->boundpadnames;
+
+            if (padname_off != 0)
+            {
+                if (PORT_PNAME_HOSTCOPY)
+                {
+                    /* PORT: the wire table is 4-byte offsets; the host pname is 8 bytes and the
+                     * promote loop below writes pointers in place, which ran over the data that
+                     * follows the table (the patrol path waypoints). Host copy, raw offsets kept. */
+                    static pname s_PadNames[1024];
+                    u32 *wn = (u32 *) ((u8 *) local_stage + padname_off);
+                    int nn;
+
+                    for (nn = 0; nn < 1023 && wn[nn] != 0; nn++)
+                    {
+                        s_PadNames[nn].p = (char *) (uintptr_t) wn[nn];
+                    }
+                    s_PadNames[nn].p = NULL;
+                    g_CurrentSetup.padnames = s_PadNames;
+                }
+                else
+                {
+                    g_CurrentSetup.padnames = SETUP_PROMOTE(local_stage, padname_off);
+                }
+            }
+            else
+            {
+                g_CurrentSetup.padnames = NULL;
+            }
+
+            if (boundname_off != 0)
+            {
+                if (PORT_PNAME_HOSTCOPY)
+                {
+                    static pname s_BoundNames[1024];
+                    u32 *wn = (u32 *) ((u8 *) local_stage + boundname_off);
+                    int nn;
+
+                    for (nn = 0; nn < 1023 && wn[nn] != 0; nn++)
+                    {
+                        s_BoundNames[nn].p = (char *) (uintptr_t) wn[nn];
+                    }
+                    s_BoundNames[nn].p = NULL;
+                    g_CurrentSetup.boundpadnames = s_BoundNames;
+                }
+                else
+                {
+                    g_CurrentSetup.boundpadnames = SETUP_PROMOTE(local_stage, boundname_off);
+                }
+            }
+            else
+            {
+                g_CurrentSetup.boundpadnames = NULL;
+            }
         }
 
-        if (local_stage->boundpadnames != 0)
-        {
-            g_CurrentSetup.boundpadnames = SETUP_PROMOTE(local_stage, local_stage->boundpadnames);
-        }
-        else
-        {
-            g_CurrentSetup.boundpadnames = NULL;
-        }
-
-        if (g_CurrentSetup.pathwaypoints)
+        if (!g_portSetupFromRom && g_CurrentSetup.pathwaypoints)
         {
             for (i1 = 0; g_CurrentSetup.pathwaypoints[i1].padID >= 0; i1++)
             {
@@ -2082,7 +2380,7 @@ void proplvreset2(enum LEVELID stageId)
             }
         }
 
-        if (g_CurrentSetup.waypointgroups)
+        if (!g_portSetupFromRom && g_CurrentSetup.waypointgroups)
         {
             for (i2 = 0; g_CurrentSetup.waypointgroups[i2].neighbours; i2++)
             {
@@ -2092,6 +2390,7 @@ void proplvreset2(enum LEVELID stageId)
         }
 
         // Convert ailist pointers a.k.a. Action Blocks from file-local to proper pointers
+        if (!g_portSetupFromRom)
         {
             AIListRecord *ailists = g_CurrentSetup.ailists;
             if (ailists)
@@ -2107,7 +2406,10 @@ void proplvreset2(enum LEVELID stageId)
         {
             for (i3 = 0; g_CurrentSetup.patrolpaths[i3].waypoints != NULL; i3++)
             {
-                g_CurrentSetup.patrolpaths[i3].waypoints = SETUP_PROMOTE(local_stage, g_CurrentSetup.patrolpaths[i3].waypoints);
+                if (!g_portSetupFromRom)
+                {
+                    g_CurrentSetup.patrolpaths[i3].waypoints = SETUP_PROMOTE(local_stage, g_CurrentSetup.patrolpaths[i3].waypoints);
+                }
 
                 for (i5 = 0; g_CurrentSetup.patrolpaths[i3].waypoints[i5] >= 0; i5++)
                 {
@@ -2127,7 +2429,10 @@ void proplvreset2(enum LEVELID stageId)
 
             for (; pad->plink != NULL; pad++)
             {
-                pad->plink = SETUP_PROMOTE(local_stage, pad->plink);
+                if (!g_portSetupFromRom)
+                {
+                    pad->plink = SETUP_PROMOTE(local_stage, pad->plink);
+                }
                 pad->pos.f[0] *= roompos_1;
                 pad->pos.f[1] *= roompos_1;
                 pad->pos.f[2] *= roompos_1;
@@ -2145,6 +2450,17 @@ void proplvreset2(enum LEVELID stageId)
                     }
                 }
 #else
+                {
+                    static s32 said;
+                    if (said < 8) {
+                        extern void portConLogf(const char *fmt, ...);
+                        said++;
+                        portConLogf("ge: pad[%d] pad=%p plink=%p stan=%p pos=%g,%g,%g base=%p\n",
+                                (s32) (pad - g_CurrentSetup.pads), (void *) pad, (void *) pad->plink,
+                                (void *) pad->stan, pad->pos.f[0], pad->pos.f[1], pad->pos.f[2],
+                                (void *) local_stage);
+                    }
+                }
                 init_pathtable_something(pad, pad->plink, &pad->stan);
 #endif
 
@@ -2164,9 +2480,12 @@ void proplvreset2(enum LEVELID stageId)
                 /** Ugly matching hack. 
                 *   TODO: investigate if there's a way to get rid of this.
                 */
-                if ((((u32) local_stage) ^ 0) + ((u32)vol->plink));
+                if ((!g_portSetupFromRom) && (((u32) local_stage) ^ 0) + ((u32)vol->plink));
 
-                vol->plink = SETUP_PROMOTE(local_stage, vol->plink);
+                if (!g_portSetupFromRom)
+                {
+                    vol->plink = SETUP_PROMOTE(local_stage, vol->plink);
+                }
                 vol->pos.f[0] *= roompos_2;
                 vol->pos.f[1] *= roompos_2;
                 vol->pos.f[2] *= roompos_2;
@@ -2658,12 +2977,15 @@ void proplvreset2(enum LEVELID stageId)
                     {
                         struct ObjectRecord *pdef_obj = (struct ObjectRecord *) phead;
 
-                        if (pdef_obj->prop && (pdef_obj->flags & PROPFLAG_INSIDEANOTHEROBJ))
+                        /* PORT: propdefs are 32-bit N64 records, so their
+                         * pointer slots read as garbage through the host
+                         * ObjectRecord; only link real pool props. */
+                        if (chrpropIsPoolProp(pdef_obj->prop) && (pdef_obj->flags & PROPFLAG_INSIDEANOTHEROBJ))
                         {
                             u32 offset = pdef_obj->pad;
                             struct ObjectRecord *inobj = setupCommandGetObject(stageId, offset + pdefIndex);
 
-                            if (inobj && inobj->prop)
+                            if (inobj && chrpropIsPoolProp(inobj->prop))
                             {
                                 pdef_obj->runtime_bitflags |= RUNTIMEBITFLAG_HASOWNER;
                                 modelSetScale(pdef_obj->model, pdef_obj->model->scale);
@@ -2836,3 +3158,6 @@ void proplvreset2(enum LEVELID stageId)
 
     alloc_false_GUARDdata_to_exec_global_action();
 }
+
+
+

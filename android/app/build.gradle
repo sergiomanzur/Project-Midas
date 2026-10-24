@@ -6,11 +6,17 @@ def repoRoot = rootProject.projectDir.parentFile
 def stagedGameData = file("$buildDir/generated/gameDataAssets")
 def stagedSupportManifest = file("$buildDir/generated/supportManifest")
 
-// Default is the real port target (arm64-v8a). An earlier 32-bit device can be
-// tested with -PmidasAbis=armeabi-v7a without changing the default. The ABI is
-// still passed to CMake by AGP, not by a second hand-written flag.
+// 1.0.2 targets a universal APK: one download for every device, arm64-v8a
+// (Galaxy S24+, Pixel 7+, Xiaomi Pad 7, ...) plus armeabi-v7a (older phones and
+// handhelds such as the Retroid Pocket). v1.0.1 was built with
+// -PmidasAbis=armeabi-v7a and 64-bit-only devices refused to install it
+// (INSTALL_FAILED_NO_MATCHING_ABIS), so never let a one-ABI release out again:
+// verifyUniversalApk below fails the build if either ABI is missing. The ARM64
+// engine still has to run before this APK can be published (android/README.md,
+// "ARM64 status"); -PmidasAbis=armeabi-v7a still builds the interim 32-bit
+// APK, with a warning.
 def supportedAbis = ["arm64-v8a", "armeabi-v7a"]
-def requestedAbis = (findProperty("midasAbis") ?: "arm64-v8a").toString()
+def requestedAbis = (findProperty("midasAbis") ?: "arm64-v8a,armeabi-v7a").toString()
         .split(",")
         .collect { it.trim() }
         .findAll { !it.isEmpty() }
@@ -23,20 +29,46 @@ requestedAbis.each { abi ->
     }
 }
 
+// Release signing. v1.0.1 shipped signed with the machine's default Android
+// debug key (CN=Android Debug), so keeping that certificate is what lets users
+// who already installed v1.0.1 update in place; a different key makes the
+// installer report "App not installed" until the old app is uninstalled. The
+// env vars below allow moving to a real release key once that one-time break is
+// planned: MIDAS_KEYSTORE, MIDAS_KEY_ALIAS, MIDAS_KEYSTORE_PASSWORD,
+// MIDAS_KEY_PASSWORD.
+def keystoreFile = file(System.getenv("MIDAS_KEYSTORE")
+        ?: "${System.properties['user.home']}/.android/debug.keystore")
+def canSignRelease = keystoreFile.exists()
+if (canSignRelease && System.getenv("MIDAS_KEYSTORE") == null) {
+    logger.lifecycle("release signing: ${keystoreFile} (debug key kept for v1.0.1 update continuity)")
+}
+
 android {
     namespace "org.midas.android"
     compileSdk 34
     ndkVersion "26.2.11394342"
 
+    signingConfigs {
+        if (canSignRelease) {
+            release {
+                storeFile keystoreFile
+                storePassword System.getenv("MIDAS_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias System.getenv("MIDAS_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword System.getenv("MIDAS_KEY_PASSWORD") ?: "android"
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "org.midas.android"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0.1-android"
+        // 2: the universal (arm64-v8a + armeabi-v7a) rebuild of 1.0.1.
+        versionCode 2
+        versionName "1.0.2-android"
 
         // SDL2 and the game are both built for the selected ABI(s) by the root
-        // CMake project. Default remains arm64-v8a.
+        // CMake project. The default is universal: both ABIs in one APK.
         ndk {
             abiFilters(*requestedAbis)
         }
@@ -74,6 +106,9 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            if (canSignRelease) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -148,4 +183,65 @@ tasks.register("stageSupportManifest") {
 
 tasks.named("preBuild").configure {
     dependsOn "stageGameDataAssets", "stageSupportManifest"
+}
+
+// A release that silently carries one ABI is exactly how v1.0.1 ended up
+// 32-bit-only: it installed on 32-bit-capable devices and was refused with
+// INSTALL_FAILED_NO_MATCHING_ABIS ("App not installed" / "not compatible") on
+// 64-bit-only phones (Galaxy S24+, Pixel 7+, Xiaomi Pad 7, ...). When the
+// universal ABI set is requested, prove both ABIs really made it into the APK.
+if (requestedAbis.containsAll(["arm64-v8a", "armeabi-v7a"])) {
+    tasks.register("verifyUniversalApk") {
+        doLast {
+            def apks = fileTree("$buildDir/outputs/apk/release") { include "**/*.apk" }.files
+            if (apks.isEmpty()) {
+                throw new GradleException("verifyUniversalApk: no release APK found under $buildDir/outputs/apk/release")
+            }
+            apks.each { apk ->
+                // Collections.list is the reliable way to drain a ZipFile's
+                // Enumeration from Groovy (for-in does not cover Enumeration).
+                def entries = []
+                def zip = new java.util.zip.ZipFile(apk)
+                try {
+                    entries = java.util.Collections.list(zip.entries()).collect { it.name }
+                } finally {
+                    zip.close()
+                }
+                ["arm64-v8a", "armeabi-v7a"].each { abi ->
+                    ["libmain.so", "libSDL2.so"].each { lib ->
+                        // toString(): a Groovy GString never equals a String,
+                        // so List.contains(gstring) would always be false.
+                        def path = "lib/${abi}/${lib}".toString()
+                        if (!entries.contains(path)) {
+                            throw new GradleException("verifyUniversalApk: ${apk.name} is missing ${path}. " +
+                                    "A one-ABI APK cannot install on the devices the other ABI covers; rebuild with " +
+                                    "-PmidasAbis=arm64-v8a,armeabi-v7a.")
+                        }
+                    }
+                }
+                logger.lifecycle("verifyUniversalApk: ${apk.name} carries arm64-v8a + armeabi-v7a")
+            }
+        }
+    }
+    // assembleRelease is registered by AGP after this script is evaluated, so
+    // hook it lazily rather than with tasks.named() here.
+    tasks.matching { it.name == "assembleRelease" }.configureEach {
+        doFirst {
+            logger.warn("WARNING: the ARM64 engine is still experimental. The universal APK installs on " +
+                    "64-bit-only devices, but the game process crashes at boot while the 32-bit address model " +
+                    "is migrated (android/README.md, 'ARM64 status'). Do not publish it as a working release.")
+        }
+        finalizedBy "verifyUniversalApk"
+    }
+} else {
+    // Interim escape hatch: a 32-bit-only APK is still buildable, but it is
+    // exactly the artifact that 64-bit-only phones refuse to install.
+    tasks.matching { it.name == "assembleRelease" }.configureEach {
+        doFirst {
+            logger.warn("WARNING: this is a 32-bit-only release (${requestedAbis.join(', ')}). " +
+                    "It will not install on 64-bit-only devices (Galaxy S24+, Pixel 7+, Xiaomi Pad 7, ...). " +
+                    "Build the universal APK with the default -PmidasAbis=arm64-v8a,armeabi-v7a once the " +
+                    "ARM64 engine runs.")
+        }
+    }
 }

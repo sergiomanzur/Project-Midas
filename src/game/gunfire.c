@@ -6,6 +6,12 @@
 #include <music.h>
 #include <snd.h>
 #include "bondview.h"
+#ifdef PORT_LP64
+#define HANDMODEL(h) (&(h)->hostmodel)
+extern void portConLogf(const char *fmt, ...);
+#else
+#define HANDMODEL(h) ((Model *)&(h)->field_B68)
+#endif
 #include "frametiming.h" /* portTickHz: crosshair lag rate-correction */
 #ifndef TARGET_N64
 /* N64 vsync cadence at the firing tick, the same 3.0 as chraction.c's
@@ -649,11 +655,24 @@ void gunUpdateAndFire(GUNHAND handnum)
                 osSyncPrintf("Increase GUNSAVESIZE to %d!!! ", mdlhdr->numRecords);
         }
 #endif
+        #ifdef PORT_LP64
+        model = &hand->hostmodel;
+#else
         model = (Model *) (&hand->field_B68);
+#endif
 
         if (mdlhdr->Switches);
 
+        #ifdef PORT_LP64
+        if (mdlhdr->numRecords > 512)
+        {
+            portConLogf("ge: gun model needs %d rwdata cells (> 512)\n", (int) mdlhdr->numRecords);
+        }
+        memset(hand->hostdatas, 0, sizeof(hand->hostdatas));
+        modelInit(model, mdlhdr, (u32 *) hand->hostdatas);
+#else
         modelInit(model, mdlhdr, (s32 *) (&hand->modeldatas));
+#endif
         sub_GAME_7F05E978(model, 1);
         sub_GAME_7F05EA94(model, hand->field_87E);
         node = mdlhdr->Switches[1];
@@ -662,7 +681,11 @@ void gunUpdateAndFire(GUNHAND handnum)
         {
             if (&node->Data->Switch);
 
+            #ifdef PORT_LP64
+            flashvisptr = ((s32 *) hand->hostdatas) + node->Data->Switch.RwDataIndex;
+#else
             flashvisptr = ((s32 *) (&hand->modeldatas)) + node->Data->Switch.RwDataIndex;
+#endif
         }
 
         if (mdlhdr->Switches[3] != NULL)
@@ -671,6 +694,9 @@ void gunUpdateAndFire(GUNHAND handnum)
         }
 
         hand->mtxlist = rwmtx;
+#ifndef TARGET_N64
+        model->render_pos = (RenderPosView *) rwmtx; /* mtxlist aliased Model.render_pos on the cart */
+#endif
 
         if ((bondwalkItemCheckBitflags(item, WEAPONSTATBITFLAG_MIRROR_DUAL) != 0) && (handnum == GUNLEFT))
         {
@@ -1611,14 +1637,10 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
      * D_80035CC0 (basemtx NULL), words 1..15 are D_80035CC4[]
      * (zbufferenabled=1, flags=3, rest zero). */
     {
-        u32 *w = (u32 *) &renderdata;
-        s32 wi;
-
-        w[0] = D_80035CC0;
-        for (wi = 0; wi < 15; wi++)
-        {
-            w[1 + wi] = D_80035CC4[wi];
-        }
+        /* PORT: the template is cart-layout words; fill the host struct by field. */
+        memset(&renderdata, 0, sizeof(renderdata));
+        renderdata.zbufferenabled = 1;
+        renderdata.flags = 3;
     }
 #endif
  
@@ -1646,11 +1668,11 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
 
         gSPPerspNormalize(gdl++, matrix_4x4_calc_depth_scale(0.0f, 300.0f));
 
-        if ((*(Model *)&handptr->field_B68).obj->numSwitches >= 0x11 && (*(Model *)&handptr->field_B68).obj->Switches[16] != NULL)
+        if ((*(Model *)HANDMODEL(handptr)).obj->numSwitches >= 0x11 && (*(Model *)HANDMODEL(handptr)).obj->Switches[16] != NULL)
         {
             union ModelRwData *rwdata;
-            model = (Model *)&handptr->field_B68;
-            rwdata = modelGetNodeRwData(model, (*(Model *)&handptr->field_B68).obj->Switches[17]);
+            model = (Model *)HANDMODEL(handptr);
+            rwdata = modelGetNodeRwData(model, (*(Model *)HANDMODEL(handptr)).obj->Switches[17]);
 
             if (rwdata != NULL)
             {
@@ -1660,11 +1682,11 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
             if (item == ITEM_ROCKETLAUNCH)
             {
                 save_img_index_to_obj_ani_slot(&g_UnknownAnimController, crosshairimage);
-                gdl = process_monitor_animation_microcode(model, (*(Model *)&handptr->field_B68).obj->Switches[16], &g_UnknownAnimController, gdl, 0, 4);
+                gdl = process_monitor_animation_microcode(model, (*(Model *)HANDMODEL(handptr)).obj->Switches[16], &g_UnknownAnimController, gdl, 0, 4);
             }
             else
             {
-                gdl = process_monitor_animation_microcode(model, (*(Model *)&handptr->field_B68).obj->Switches[16], &g_TaserAnimController, gdl, 0, 1);
+                gdl = process_monitor_animation_microcode(model, (*(Model *)HANDMODEL(handptr)).obj->Switches[16], &g_TaserAnimController, gdl, 0, 1);
             }
         }
 
@@ -1705,7 +1727,7 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
             }
         }
 
-        subdraw(&renderdata, (Model *)&handptr->field_B68);
+        subdraw(&renderdata, (Model *)HANDMODEL(handptr));
         gdl = renderdata.gdl;
 
         if (bondwalkItemCheckBitflags(item, WEAPONSTATBITFLAG_MIRROR_DUAL) != 0)
@@ -1713,7 +1735,7 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
             gSPClearGeometryMode(gdl++, G_CULL_BOTH);
         }
 
-        bondviewTransformManyPosToViewMatrix((*(Model *)&handptr->field_B68).render_pos, (*(Model *)&handptr->field_B68).obj->numMatrices);
+        bondviewTransformManyPosToViewMatrix((*(Model *)HANDMODEL(handptr)).render_pos, (*(Model *)HANDMODEL(handptr)).obj->numMatrices);
         matrix_4x4_7F058C88();
 
         gSPPerspNormalize(gdl++, viGetPerspNorm());
@@ -1758,14 +1780,10 @@ Gfx *set_enviro_fog_for_items_in_solo_watch_menu(Gfx *gdl, ITEM_IDS itemid, Mtxf
     memset(&model, 0, sizeof(model)); /* full Model on PC - clear the anim state the truncated N64 local never had */
 
     {
-        u32 *w = (u32 *) &renderdata;
-        s32 wi;
-
-        w[0] = D_80035D00;
-        for (wi = 0; wi < 15; wi++)
-        {
-            w[1 + wi] = D_80035D04[wi];
-        }
+        /* PORT: fill the host struct by field (template words are cart layout) */
+        memset(&renderdata, 0, sizeof(renderdata));
+        renderdata.zbufferenabled = 1;
+        renderdata.flags = 3;
     }
 #endif
 
@@ -2118,7 +2136,7 @@ Gfx* watchRenderController(Gfx* gdl, Mtxf* basemtx, s32 envcolour, bool animateb
 
     for (i = 0; i < objheader->numMatrices; i++)
     {
-        matrix_4x4_copy((u32)modelstack.render_pos + i * sizeof(Mtxf), &sp41c);
+        matrix_4x4_copy((uintptr_t)modelstack.render_pos + i * sizeof(Mtxf), &sp41c);
         matrix_4x4_f32_to_s32(&sp41c, &modelstack.render_pos[i]);
     }
 
@@ -2353,7 +2371,7 @@ Gfx* watchRenderController(Gfx* gdl, Mtxf* basemtx, s32 envcolour, bool animateb
 
         for (i = 0; i < objheader->numMatrices; i++)
         {
-            matrix_4x4_copy((u32)modelstack.render_pos + i * sizeof(Mtxf), &sp41c);
+            matrix_4x4_copy((uintptr_t)modelstack.render_pos + i * sizeof(Mtxf), &sp41c);
             matrix_4x4_f32_to_s32(&sp41c, &modelstack.render_pos[i]);
         }
 
@@ -6170,6 +6188,10 @@ void update_bullet_casings(void)
     }
 }
 
+#ifdef PORT_LP64
+/* PORT: a full host Model - modelInit writes every member and the cart-sized subset smashed the stack. */
+typedef Model ModelHead;
+#else
 typedef struct ModelHead {
     s16 unk00;
     s16 rwdatalen;
@@ -6181,6 +6203,7 @@ typedef struct ModelHead {
     Model *attachedto;
     ModelNode *attachedto_objinst;
 } ModelHead;
+#endif
 
 void sub_GAME_7F068EC4(CasingRecord *casing, Gfx **gdl)
 {
@@ -6188,7 +6211,12 @@ void sub_GAME_7F068EC4(CasingRecord *casing, Gfx **gdl)
     ModelFileHeader *model_header = casing->header;
     RenderPosView   *model_matrices = dynAllocate(model_header->numMatrices * sizeof(RenderPosView));
     ModelHead        model;
+#ifdef PORT_LP64
+    /* PORT: the template is cart-layout words; the host struct has 8-byte pointers. */
+    ModelRenderData  render_data;
+#else
     ModelRenderData  render_data = *(ModelRenderData *)g_DefaultCasingModelRenderData;
+#endif
     Mtxf             casing_model_mtx;
     s32              axis_offset;
     s32              matrix_translation_in_range = TRUE;
@@ -6196,6 +6224,12 @@ void sub_GAME_7F068EC4(CasingRecord *casing, Gfx **gdl)
     f32              model_scale_or_min_translation;
     u8              *matrix_axis_ptr;
 
+#ifdef PORT_LP64
+    memset(&render_data, 0, sizeof(render_data));
+    render_data.zbufferenabled = 1;
+    render_data.flags = 3;
+    memset(&model, 0, sizeof(model));
+#endif
     modelCalculateRwDataLen(model_header);
     modelInit((Model *)&model, model_header, NULL);
 
@@ -6561,7 +6595,7 @@ Gfx *gunDrawHudInteger(Gfx *gdl, s32 value, s32 x, s32 halign, s32 y, s32 valign
  * (12-byte stride from the 9mm slot at 0x02000C84) that N64 rebased onto the
  * copied segment; on PC map the slot index onto the compiled-in entries
  * (image_bank.c order) instead of dereferencing the raw address. */
-u32 portAmmoIconPtr(u32 icon)
+uintptr_t portAmmoIconPtr(u32 icon)
 {
     extern struct sImageTableEntry *ammo9mmimage, *rifleammoimage,
         *shotgunammoimage, *knifeammoimage, *glaunchammoimage,
@@ -6588,7 +6622,7 @@ u32 portAmmoIconPtr(u32 icon)
     {
         return 0;
     }
-    return (u32) *slots[idx];
+    return (uintptr_t) *slots[idx];
 }
 #endif
 
@@ -6765,9 +6799,9 @@ Gfx *generate_ammo_total_microcode(Gfx *gdl)
     s32 rightx;
     s32 reserveammo;
     s32 magammo;
-    u32 imageoffset_r;
+    uintptr_t imageoffset_r;
     s32 textwidth_r;
-    u32 imageoffset_l;
+    uintptr_t imageoffset_l;
     s32 textwidth_l = 0; /* read at the mission-timer call even with no left icon */
 
     if (g_CurrentPlayer->gunammooff == 0)
@@ -7070,7 +7104,7 @@ Gfx *gunDrawWatchAmmoDisplay(Gfx *gdl)
     s32 ammotype;
     s32 reserveammo;
     s32 magammo;
-    u32 imageoffset;
+    uintptr_t imageoffset;
     s32 textwidth;
     s32 pad;
 

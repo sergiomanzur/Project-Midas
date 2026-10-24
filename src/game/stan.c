@@ -756,12 +756,36 @@ s32 g_portStanFromRom;
 #endif
 
 
+#ifndef TARGET_N64
+static struct StanPrefixRecord s_RomStanPrefix;
+
+/* A stan served from the cart is converted in place by romfileStanConvert,
+ * which leaves OFFSETS in the header (word 1 and the room slots). The game
+ * dereferences a host StanPrefixRecord, so build one whose ptr_firstroom
+ * points into that image. */
+static struct StanPrefixRecord *portStanHostPrefix(struct StanPrefixRecord *file)
+{
+    u32 firstoff;
+
+    if (!g_portStanFromRom || file == NULL)
+    {
+        return file;
+    }
+    firstoff = ((u32 *) file)[1];
+    s_RomStanPrefix.stanfile = 0;
+    s_RomStanPrefix.ptr_firstroom = (StandTile *) ((u8 *) file + firstoff);
+    return &s_RomStanPrefix;
+}
+#endif
+
+
 void stanLoadFile(struct StanPrefixRecord *file)
 {
     struct StanPrefixRecord *prefix = &stan_prefix;
     s32 tokenIndexMask;
 
 #ifndef TARGET_N64
+    file = portStanHostPrefix(file);
     /* every walker downstream (stanBuildRoomData and all) needs the PACKED
      * image; stanDetermineEOF already built it, this is a cache lookup */
     /* same predicate change as stanDetermineEOF: NULL check, not an
@@ -774,7 +798,9 @@ void stanLoadFile(struct StanPrefixRecord *file)
 
     m_stanRegion = 1;
     tokenIndexMask = !file->ptr_firstroom;
-    prefix->stanfile = file;
+    /* PORT: the decomp wrote this through `prefix` (a pointer to the
+     * stan_prefix variable), which only worked while a pointer was 4 bytes. */
+    stan_prefix = file;
     tokenIndexMask = 1;
 
     /*
@@ -3534,6 +3560,7 @@ void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 ori
     
     delta = ((s32) newBase) - origBase;
 #ifndef TARGET_N64
+    file = portStanHostPrefix(file);
     /* PC: compiled-in stan files already hold real pointers, so the
      * offset-to-pointer rebase must be zero or every room pointer is doubled. A
      * zero delta also makes stage reloads safe to repeat. */
@@ -3558,8 +3585,8 @@ void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 ori
     assert(*r==0);
     #endif
   
-    standTileStart = (StandTile *)(((s32)file->ptr_firstroom + delta) - 0x80);
-    ptr_firstroom_0 = (s32)file->ptr_firstroom + delta;
+    standTileStart = (StandTile *)(((u8 *)file->ptr_firstroom + delta) - 0x80);
+    ptr_firstroom_0 = (s32)(uintptr_t) file->ptr_firstroom + delta;
     
     newBase = list_of_tilesizes;
     roomPtr = (void **)&file->ptr_firstroom;
@@ -3581,7 +3608,7 @@ void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 ori
      * so the N64 offset-promotion loop is skipped. Running it over real heap
      * pointers could mangle any whose low 16 bits are zero. */
     (void) roomPtr;
-    tile = (StandTile *) ptr_firstroom_0;
+    tile = file->ptr_firstroom;
 #endif
     
     if ((*(s32 *) tile) != 0)

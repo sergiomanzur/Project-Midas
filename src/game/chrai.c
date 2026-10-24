@@ -1,3 +1,4 @@
+﻿#include <port_console.h>
 #include "chrai.h"
 #include "bg.h"
 #include "bgfog.h"
@@ -868,6 +869,17 @@ extern bool            g_isBondKIA;
  @param         PROPTYPE_OBJ = Object (Vehichle or Aircraft)
  @canonical name ~ maybe
 */
+#ifndef TARGET_N64
+static int portPtrLooksHosted(const void *p)
+{
+    uintptr_t v = (uintptr_t) p;
+    return v >= 0x10000u && (v >> 32) != 0xFFFFFFFFu;
+}
+#endif
+
+#ifdef PORT_LP64
+extern void portConLogf(const char *fmt, ...);
+#endif
 void                   ai(PropDefHeaderRecord *Entityp, PROP_TYPE EntityType)
 {
     /*
@@ -887,6 +899,15 @@ void                   ai(PropDefHeaderRecord *Entityp, PROP_TYPE EntityType)
     AircraftRecord *AircraftEntityp = NULL;
     AIRecord       *AiListp         = NULL;
     s32             Offset;
+
+    /* PORT: records still holding a 32-bit setup image (or a bad list entry)
+     * fault on the first field read; skip instead of crashing. */
+    if (!portPtrLooksHosted(Entityp))
+    {
+        static s32 said;
+        if (!said) { said = 1; portConLogf("ge: ai: bogus entity %p (type %d) - skipped\n", (void *) Entityp, (s32) EntityType); }
+        return;
+    }
 
     if (EntityType == PROP_TYPE_CHR)
     {
@@ -921,8 +942,26 @@ void                   ai(PropDefHeaderRecord *Entityp, PROP_TYPE EntityType)
         AiListp = AircraftEntityp->ailist;
     }
 
+    if (AiListp && !portPtrLooksHosted(AiListp))
+    {
+        static s32 saidList;
+        if (!saidList) { saidList = 1; portConLogf("ge: ai: bogus ailist %p - skipped\n", (void *) AiListp); }
+        AiListp = NULL;
+    }
+
     if (AiListp) // continue if Has ailist (check once)
     {
+#ifndef TARGET_N64
+        {
+            extern void portConLogf(const char *fmt, ...);
+            static s32 said;
+            if (said < 8) {
+                said++;
+                portConLogf("ge: ai list=%p offset=%d first=%02x\n",
+                        (void *) AiListp, (s32) Offset, ((u8 *) AiListp)[Offset & 0xff]);
+            }
+        }
+#endif
         // loop forever (or until broken)
         for (;;)
         {
@@ -4609,3 +4648,6 @@ void                   ai(PropDefHeaderRecord *Entityp, PROP_TYPE EntityType)
     osSyncPrintf("SERIOUS AI ERROR!!!!!! Null ailist!\n");
 #endif
 } // ai()
+
+
+

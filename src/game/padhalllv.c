@@ -383,26 +383,61 @@ void sub_GAME_7F08F438(waygroup *groupa, waygroup *groupb, waypoint **pointa, wa
     s32 *groupapointnums = groupa->waypoints;
     s32 stack;
 
-    while (*groupapointnums >= 0)
+#ifndef TARGET_N64
+    if (groupapointnums != NULL)
     {
-        waypoint *groupapoint = &points[*groupapointnums];
-        s32 *neighbournums = groupapoint->neighbours;
-
-        while (*neighbournums >= 0)
-        {
-            waypoint *neighbour = &points[*neighbournums];
-
-            if (groupb == &groups[neighbour->groupNum])
+        static s32 said;
+        if (said < 12) {
+            extern void portConLogf(const char *fmt, ...);
+            said++;
+            portConLogf("ge: f438 a=%p b=%p awp=%p ids=%d,%d,%d points=%p\n",
+                    (void *) groupa, (void *) groupb, (void *) groupapointnums,
+                    groupapointnums[0], groupapointnums[1], groupapointnums[2],
+                    (void *) points);
             {
-                *pointa = groupapoint;
-                *pointb = neighbour;
-                return;
+                waypoint *gp0 = &points[groupapointnums[0]];
+                s32 *nb0 = gp0->neighbours;
+                portConLogf("ge: f438   gp=%p pad=%d nb=%p ids0=%d,%d,%d\n",
+                        (void *) gp0, gp0->padID, (void *) nb0,
+                        nb0 ? nb0[0] : -9, nb0 ? nb0[1] : -9, nb0 ? nb0[2] : -9);
+            }
+        }
+    }
+#endif
+
+    {
+        /* PORT: ROM-setup path tables can hold values that are not plain
+         * waypoint indices; clamp so the search cannot index outside `points`. */
+        extern s32 g_portNumWaypoints;
+        const s32 wlimit = (g_portNumWaypoints > 0) ? g_portNumWaypoints : 0x0FFFFFFF;
+
+        while (groupapointnums != NULL && *groupapointnums >= 0 && *groupapointnums < wlimit)
+        {
+            waypoint *groupapoint = &points[*groupapointnums];
+            s32 *neighbournums = groupapoint->neighbours;
+
+            while (neighbournums != NULL && *neighbournums >= 0)
+            {
+                waypoint *neighbour;
+
+                if (*neighbournums >= wlimit)
+                {
+                    break;
+                }
+                neighbour = &points[*neighbournums];
+
+                if (groupb == &groups[neighbour->groupNum])
+                {
+                    *pointa = groupapoint;
+                    *pointb = neighbour;
+                    return;
+                }
+
+                neighbournums++;
             }
 
-            neighbournums++;
+            groupapointnums++;
         }
-
-        groupapointnums++;
     }
     *pointb = NULL;
     *pointa = NULL;
@@ -694,3 +729,4 @@ void waypointDebugTestRandomRoute(void)
     osSyncPrintf("\n");
 #endif
 }
+

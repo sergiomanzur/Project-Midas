@@ -371,6 +371,12 @@ public class RomActivity extends Activity {
         pBg.setCornerRadius(dp(6));
         primaryButton.setBackground(pBg);
         primaryButton.setOnClickListener(v -> onPrimary());
+        /* Long-press = test shortcut: jump straight into a mission, skipping the
+         * intro and menus (the engine's GE_STAGE debug launch). */
+        primaryButton.setOnLongClickListener(v -> {
+            showStagePicker();
+            return true;
+        });
         add(root, primaryButton, 20);
 
         // Secondary Button (Dark with gold border)
@@ -515,7 +521,45 @@ public class RomActivity extends Activity {
             setError(getString(R.string.rom_detail_missing));
             return;
         }
-        startActivity(new Intent(this, MidasActivity.class));
+        Intent intent = new Intent(this, MidasActivity.class);
+        /* Test hook: forward an optional GE_STAGE target (adb am start --es ge_stage dam). */
+        String stage = getIntent().getStringExtra("ge_stage");
+        if (stage != null) {
+            intent.putExtra("ge_stage", stage);
+        }
+        startActivity(intent);
+    }
+
+    private void startGameAt(String stage) {
+        if (!RomStore.hasUsableRom(this)) {
+            refresh();
+            setError(getString(R.string.rom_detail_missing));
+            return;
+        }
+        Intent intent = new Intent(this, MidasActivity.class);
+        intent.putExtra("ge_stage", stage);
+        startActivity(intent);
+    }
+
+    /** Long-press shortcut: pick a solo stage and boot straight into it. */
+    private void showStagePicker() {
+        final String[] names = {
+                "dam", "facility", "runway", "surface1", "bunker1", "silo",
+                "frigate", "surface2", "bunker2", "statue", "archives", "streets",
+                "depot", "train", "jungle", "control", "caverns", "cradle",
+                "aztec", "egypt"
+        };
+        final String[] labels = {
+                "1  Dam", "2  Facility", "3  Runway", "4  Surface 1", "5  Bunker 1", "6  Silo",
+                "7  Frigate", "8  Surface 2", "9  Bunker 2", "10 Statue", "11 Archives", "12 Streets",
+                "13 Depot", "14 Train", "15 Jungle", "16 Control", "17 Caverns", "18 Cradle",
+                "19 Aztec", "20 Egypt"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Test: start a mission")
+                .setItems(labels, (dialog, which) -> startGameAt(names[which]))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void openPicker() {

@@ -160,6 +160,19 @@ void obLoadBGFileBytesAtOffset(u8 *bgname, u8 *target, s32 offset, s32 len)
   index = fileGetIndex(bgname);
   fileentry = &file_resource_table[index];
 
+#ifndef TARGET_N64
+  {
+    static s32 said;
+    if (said < 8) {
+      extern void portConLogf(const char *fmt, ...);
+      said++;
+      portConLogf("ge: bgbcopy idx=%d romsz=%u hw=%p off=%d len=%d tgt=%p\n",
+              (s32) index, (unsigned) resource_lookup_data_array[index].rom_size,
+              (void *) fileentry->hw_address, (s32) offset, (s32) len, (void *) target);
+    }
+  }
+#endif
+
   if (resource_lookup_data_array[index].rom_size != 0)
   {
     //if the size of offset data would exceed file size, loop forever
@@ -225,6 +238,16 @@ void obLoadBGFileBytesAtOffset(u8 *bgname, u8 *target, s32 offset, s32 len)
   fileentry = &file_resource_table[index];
 
 #ifndef TARGET_N64
+  {
+    static s32 said;
+    if (said < 10) {
+      extern void portConLogf(const char *fmt, ...);
+      said++;
+      portConLogf("ge: bgbcopy idx=%d romsz=%u hw=%p off=%d len=%d tgt=%p\n",
+              (s32) index, (unsigned) resource_lookup_data_array[index].rom_size,
+              (void *) fileentry->hw_address, (s32) offset, (s32) len, (void *) target);
+    }
+  }
   { /* tickhz=hw load hitch: a room's compressed chunk off the cart (frametiming.c) */
     extern void portHwNoteLoad(u32 romBytes, s32 compressed);
     portHwNoteLoad((u32) len, 1);

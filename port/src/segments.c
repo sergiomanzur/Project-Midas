@@ -163,8 +163,10 @@ __asm__(
     "    .text\n"
 );
 
-u8 _animation_dataSegmentRomStart[0xE7E0];
-u8 _animation_entriesSegmentRomStart[0x169EC0];
+/* Low-arena animation segment images (animdata.c allocates and fills them;
+ * see port/include/port_animseg.h for why they may not live in .bss). */
+u8 *port_animation_dataSegmentRomStart;
+u8 *port_animation_entriesSegmentRomStart;
 
 /* ---- fonts (textrelated.c load_font_tables, lv.c lvInit) --------------- */
 /**

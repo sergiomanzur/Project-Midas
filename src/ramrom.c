@@ -62,19 +62,20 @@ void romCopy(void *target, void *source, u32 size)
  * romCopyAligned
  * aligns data, does a romCopy(), then returns aligned pointer to target
  */
-s32 romCopyAligned(void *target, void *source, s32 length)
+void *romCopyAligned(void *target, void *source, s32 length)
 {
-    s32 target_offset;
-    s32 *target_aligned;
-    s32 *source_aligned;
-    s32 *source_offset;
+    uintptr_t target_aligned;
+    uintptr_t source_aligned;
+    uintptr_t source_offset;
 
-    source_aligned = align_addr_even((s32)source);
-    source_offset = (s32)source - (s32)source_aligned;
-    target_aligned = ALIGN16_a((s32)target);
-    target_offset = source_offset;
-    romCopy(target_aligned, source_aligned, ALIGN16_a((s32)source_offset + length));
-    return ((s32)target_aligned + target_offset);
+    /* PORT: host pointers are 64-bit; the s32 casts here truncated them and
+     * the DMA copied to/from a sign-extended address (demo replay crash). */
+    source_aligned = (uintptr_t) source & ~(uintptr_t) 1;
+    source_offset = (uintptr_t) source - source_aligned;
+    target_aligned = ((uintptr_t) target + 15) & ~(uintptr_t) 15;
+    romCopy((void *) target_aligned, (void *) source_aligned,
+            ALIGN16_a((s32) source_offset + length));
+    return (void *) (target_aligned + source_offset);
 }
 
 /**

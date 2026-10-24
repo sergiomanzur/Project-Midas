@@ -838,6 +838,15 @@ static void portAudioInit(void)
  */
 void portAudioPump(void)
 {
+    /* arm64 bring-up: sound-bootswitch builds have an empty bank and no
+     * valid ACMD addresses; do not run the audio microcode at all. */
+    {
+        extern s8 g_sndBootswitchSound;
+        if (g_sndBootswitchSound) {
+            return;
+        }
+    }
+
     /* audi.c's RSP budget is MAX_ACMD_SIZE = 3000 Acmds per frame; a
      * music-dense frame really emits >1024 (the undersized first cut
      * overflowed into frameBuf - the stable float-bits-as-pointer

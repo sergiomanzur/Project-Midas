@@ -55,6 +55,17 @@ set(ANDROID_NDK "${CMAKE_ANDROID_NDK}")
 
 add_subdirectory("${GE_SDL2_ROOT}" "${CMAKE_BINARY_DIR}/third_party/SDL2" EXCLUDE_FROM_ALL)
 
+# 16 KB page alignment (Android 15+ devices with 16 KB pages) must be requested
+# on the SDL2 target too. The root CMakeLists sets the same flags for libmain.so,
+# but it does so AFTER this include, so a directory-scoped add_link_options()
+# there never reaches the SDL2 target created above. Without this,
+# System.loadLibrary("SDL2") fails on 16 KB-page devices with
+# "p_align (4096) is less than page size (16384)".
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    target_link_options(SDL2 PRIVATE
+        -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
+endif()
+
 set(GE_SDL2_JAVA_DIR "${GE_SDL2_ROOT}/android-project/app/src/main/java"
     CACHE PATH "SDL Java sources the Android shell must add to its source set")
 message(STATUS "Android SDL2: ${GE_SDL2_ROOT} (2.30.11), Java sources ${GE_SDL2_JAVA_DIR}")

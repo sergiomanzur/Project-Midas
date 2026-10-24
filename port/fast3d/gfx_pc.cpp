@@ -37,6 +37,9 @@
 #include "gfx_rendering_api.h"
 #include "gfx_screen_config.h"
 #include "port_hostptr.h" /* PORT_IS_HOST_ADDR: the Xbox image sits below 0x10000000 */
+#include "port_wiredl.h"  /* 8-byte N64 display lists on a 64-bit host */
+
+extern "C" void portConLogf(const char *fmt, ...);
 
 uintptr_t gfxFramebuffer;
 
@@ -6998,7 +7001,30 @@ static void gfx_run_dl(Gfx* cmd) {
     char dlName[128];
     const char* fileName;
 
+    /* Cart data (font/logo/gun-barrel lists, model sub-lists) is an 8-byte
+     * command stream; expand it to host Gfx commands before walking. */
+    if (portIsWireDL((const void *) cmd)) {
+        Gfx *expanded = portWireDLExpand((const void *) cmd);
+        if (expanded != nullptr) {
+            static int said;
+            if (said < 6) { said++; portConLogf("ge: wiredl expand %p -> %p\n", (void *) cmd, (void *) expanded); }
+            cmd = expanded;
+        } else {
+            static int said2;
+            if (said2 < 6) { said2++; portConLogf("ge: wiredl expand FAILED %p w0=%08x\n", (void *) cmd, (unsigned) cmd->words.w0); }
+        }
+    }
+
     Gfx* dListStart = cmd;
+    {
+        static int dlcount;
+        if (dlcount < 40) {
+            dlcount++;
+            portConLogf("ge: dlrun %p w0=%08x w1=%08x\n", (void *) cmd,
+                    (unsigned) cmd->words.w0, (unsigned) cmd->words.w1);
+        }
+    }
+
     uint64_t ourHash = -1;
 
     /* Opcodes that never change the derived draw state (see ge_state_serial),
@@ -7043,8 +7069,50 @@ static void gfx_run_dl(Gfx* cmd) {
         ge_hot_op[(uint8_t)G_NOOP] = 1;
     }
     for (;;) {
-        uint32_t opcode = cmd->words.w0 >> 24;
+        uint32_t opcode = (uint32_t)(cmd->words.w0 >> 24);
         roc_cur_cmd = cmd;
+        if (opcode > 0xFFu) {
+            /* A host pointer landed in w0: the walk is misaligned (an 8-byte
+             * list walked at 16-byte stride or vice versa). Log the stream so
+             * the producer can be identified instead of indexing ge_hot_op[]
+             * out of bounds. */
+            static int badsaid;
+            if (badsaid < 3) {
+                badsaid++;
+                extern s32 g_gfxRdpOutputBufferStart;
+                extern s32 g_gfxRdpOutputBufferEnd;
+                portConLogf("ge: bad op rdpbuf=%08x..%08x\n",
+                        (unsigned) g_gfxRdpOutputBufferStart, (unsigned) g_gfxRdpOutputBufferEnd);
+                portConLogf("ge: bad op w0=%016llx w1=%016llx cmd=%p dlstart=%p\n",
+                        (unsigned long long) cmd->words.w0, (unsigned long long) cmd->words.w1,
+                        (void *) cmd, (void *) dListStart);
+                for (int bi = 0; bi < 24; bi++) {
+                    portConLogf("ge: bad op  start[%d] w0=%016llx w1=%016llx\n", bi,
+                            (unsigned long long) dListStart[bi].words.w0,
+                            (unsigned long long) dListStart[bi].words.w1);
+                }
+                for (int bi = 0; bi < 6; bi++) {
+                    portConLogf("ge: bad op  after[%d] w0=%016llx w1=%016llx\n", bi,
+                            (unsigned long long) cmd[bi].words.w0,
+                            (unsigned long long) cmd[bi].words.w1);
+                }
+                for (int bi = -8; bi < 0; bi++) {
+                    portConLogf("ge: bad op  [%d] w0=%016llx w1=%016llx\n", bi,
+                            (unsigned long long) cmd[bi].words.w0,
+                            (unsigned long long) cmd[bi].words.w1);
+                }
+                {
+                    uint32_t nj = s_DlJumpRingIdx < 8 ? s_DlJumpRingIdx : 8;
+                    uint32_t ji;
+                    for (ji = s_DlJumpRingIdx - nj; ji != s_DlJumpRingIdx; ji++) {
+                        const DlJumpEntry* e = &s_DlJumpRing[ji & (DL_JUMP_RING_LEN - 1)];
+                        portConLogf("ge: bad op  jump %p: %08x %08x\n",
+                                (const void *) e->cmd, e->w0, e->w1);
+                    }
+                }
+            }
+            break;
+        }
         if (roc_walk != nullptr) {
             /* GPU part replay: the list's state and matrix commands run as
              * usual; vertex loads and triangles are skipped, and a retained
@@ -7153,7 +7221,13 @@ static void gfx_run_dl(Gfx* cmd) {
                 }
                 break;
             case G_MTX: {
-                gfx_sp_matrix(C0(16, 8), (const int32_t*)seg_addr(cmd->words.w1));
+                const void *maddr = seg_addr(cmd->words.w1);
+                if ((uintptr_t) maddr < 0x10000u) {
+                    static int said;
+                    if (said < 3) { said++; portConLogf("ge: skip bad matrix %p (w1=%08x)\n", (void *) cmd, (unsigned) cmd->words.w1); }
+                    break;
+                }
+                gfx_sp_matrix(C0(16, 8), (const int32_t*) maddr);
                 break;
             }
             case (uint8_t)G_POPMTX: // 0xBD via GE's gbi.h
@@ -7172,20 +7246,55 @@ static void gfx_run_dl(Gfx* cmd) {
             case (uint8_t)G_TEXTURE:
                 gfx_sp_texture(C1(16, 16), C1(0, 16), C0(11, 3), C0(8, 3), C0(0, 8));
                 break;
-            case G_VTX:
-                gfx_sp_vertex(C0(0, 16) / sizeof(Vtx), C0(16, 4), (const Vtx*)seg_addr(cmd->words.w1));
+            case G_VTX: {
+                const Vtx *vaddr = (const Vtx *) seg_addr(cmd->words.w1);
+                if ((uintptr_t) vaddr < 0x10000u) {
+                    static int vtxsaid;
+                    if (vtxsaid < 5) {
+                        vtxsaid++;
+                        portConLogf("ge: skip bad vtx %p cmd w0=%08x w1=%08x seg4=%p seg5=%p seg14=%p\n",
+                                (void *) vaddr, (unsigned) cmd->words.w0, (unsigned) cmd->words.w1,
+                                (void *) segmentPointers[4], (void *) segmentPointers[5],
+                                (void *) segmentPointers[14]);
+                    }
+                    break;
+                }
+                gfx_sp_vertex(C0(0, 16) / sizeof(Vtx), C0(16, 4), vaddr);
                 break;
+            }
             case G_DL:
                 /* GE bring-up: ring-log every DL jump so the runaway fatal
                  * can name the parent that held a garbage pointer (the
                  * walker coasts megabytes through zero-fill before the
                  * unknown-opcode fatal fires - the ring survives that). */
                 s_DlJumpRing[s_DlJumpRingIdx++ & (DL_JUMP_RING_LEN - 1)] = {
-                    cmd, cmd->words.w0, cmd->words.w1
+                    cmd, (uint32_t)cmd->words.w0, (uint32_t)cmd->words.w1
                 };
                 if (C0(16, 1) == 0) {
                     // Push return address
                     Gfx* subGFX = (Gfx*)seg_addr(cmd->words.w1);
+
+                    /* PORT: only follow a target that really is a terminated
+                     * display list. GE uses the plain F3DEX GBI (G_ENDDL 0xB8);
+                     * a few converted cart lists still carry 0xDF. */
+                    if (subGFX != nullptr) {
+                        Gfx *sc = subGFX;
+                        Gfx *lim = subGFX + 16384;
+                        int term = 0;
+                        for (; sc < lim; sc++) {
+                            unsigned int so = (unsigned int) (sc->words.w0 >> 24);
+                            if (so == 0xB8u || so == 0xDFu) { term = 1; break; }
+                        }
+                        if (!term) {
+                            static int dlsaid;
+                            if (dlsaid < 6) {
+                                dlsaid++;
+                                portConLogf("ge: skip unterminated G_DL %p (w1=%016llx)\n",
+                                        (void *) subGFX, (unsigned long long) cmd->words.w1);
+                            }
+                            break;
+                        }
+                    }
 
                     if (roc_next_kind != 0) { /* G_PORTCACHE_EXT named this list */
                         if (subGFX != nullptr && gfx_room_cache != 0) {
@@ -7262,7 +7371,26 @@ static void gfx_run_dl(Gfx* cmd) {
                         ge_tri_origin = origin_saved;
                     }
                 } else {
-                    cmd = (Gfx*)seg_addr(cmd->words.w1);
+                    /* PORT: same validation for the tail-jump form of G_DL. */
+                    Gfx *sub = (Gfx *) seg_addr(cmd->words.w1);
+                    Gfx *sc = sub;
+                    Gfx *lim = sub + 16384;
+                    int term = 0;
+
+                    for (; sc < lim; sc++) {
+                        unsigned int so = (unsigned int) (sc->words.w0 >> 24);
+                        if (so == 0xB8u || so == 0xDFu) { term = 1; break; }
+                    }
+                    if (!term) {
+                        static int dlsaid2;
+                        if (dlsaid2 < 6) {
+                            dlsaid2++;
+                            portConLogf("ge: skip unterminated tail G_DL %p (w1=%016llx)\n",
+                                    (void *) sub, (unsigned long long) cmd->words.w1);
+                        }
+                        break;
+                    }
+                    cmd = sub;
                     --cmd; // increase after break
                 }
                 break;
@@ -8013,3 +8141,13 @@ extern "C" void gfx_reset_framebuffer(void) {
     gfx_rapi->start_draw_to_framebuffer(0, (float)gfx_current_dimensions.height / SCREEN_HEIGHT);
     active_fb = framebuffers.end();
 }
+
+
+
+
+
+
+
+
+
+

@@ -191,7 +191,12 @@ void osScAddClient(OSSched *sc, OSScClient *c, OSMesgQueue *msgQ, OSScClient *ne
     mask = osSetIntMask(OS_IM_NONE);
 
     c->msgQ = msgQ;
-    c[1].next = next;
+    /* PORT: the decomp wrote c[1].next = next here, one past a single
+     * OSScClient. On 64-bit the struct is 16 bytes, so that store lands in
+     * whatever .bss follows gfxClient (it clobbered os_scheduler.clientList,
+     * which stopped every retrace message). The list is a plain head insert;
+     * `next` is unused. */
+    (void) next;
     c->next = sc->clientList;
     sc->clientList = c;
 
