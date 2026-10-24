@@ -2354,17 +2354,27 @@ struct player
   /* head-bob "gait" model: the cart overlays it on `model`..field_650 with rwdata at field_654 */
   struct Model hostgaitmodel;
   s32 hostgaitdatas[256];
+  /* The armor/health gauge display lists are built in place at watch_body_armor_bar_gdl /
+   * watch_health_bar_gdl, in room for 8-byte cart commands. Host commands are 16 bytes, so the
+   * lists ran over the gauge's own vertex data (armor_display_values) and drew garbage
+   * triangles; they get their own buffers here (45 commands used, 64 reserved). */
+  Gfx hostArmorGaugeDL[64];
+  Gfx hostHealthGaugeDL[64];
 #endif
 };
 #ifdef PORT_LP64
 #define WATCHMODEL(p) (&(p)->hostwatchmodel)
 #define GAITMODEL(p) (&(p)->hostgaitmodel)
 #define GAITDATAS(p) ((p)->hostgaitdatas)
+#define ARMOR_GAUGE_DL(p) ((p)->hostArmorGaugeDL)
+#define HEALTH_GAUGE_DL(p) ((p)->hostHealthGaugeDL)
 #define watch_scale_destination hostwatchmodel.scale
 #else
 #define WATCHMODEL(p) ((Model *) (&(p)->something_with_watch_object_instance))
 #define GAITMODEL(p) ((Model *) (&(p)->model))
 #define GAITDATAS(p) (&(p)->field_654)
+#define ARMOR_GAUGE_DL(p) ((Gfx *) &(p)->watch_body_armor_bar_gdl)
+#define HEALTH_GAUGE_DL(p) ((Gfx *) &(p)->watch_health_bar_gdl)
 #endif
 
 

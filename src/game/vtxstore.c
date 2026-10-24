@@ -107,7 +107,7 @@ void sub_GAME_7F09B820(void)
     dword_CODE_bss_8007A0D8 *= 2;
     dword_CODE_bss_8007A0DC *= 2;
 
-    tmp = 0x14;
+    tmp = sizeof(struct unk_09B7A0_struct_parent); /* 0x14 on N64; the Vertex* makes it 0x18 on a 64-bit host */
     dword_CODE_bss_8007A0E8 = mempAllocBytesInBank(dword_CODE_bss_8007A0D4 * tmp, MEMPOOL_STAGE);
     dword_CODE_bss_8007A0E0 = mempAllocBytesInBank(dword_CODE_bss_8007A0D0 * 0x10, MEMPOOL_STAGE);
     dword_CODE_bss_8007A0EC = mempAllocBytesInBank(dword_CODE_bss_8007A0DC * tmp, MEMPOOL_STAGE);

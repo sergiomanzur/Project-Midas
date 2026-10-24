@@ -23,6 +23,9 @@
 #include "stan.h"
 #include "explosion.h"
 #include "bgroomtrans.h"
+#ifdef PORT_LP64
+#include "ob.h" /* _fileNameLoadToBank returns a pointer */
+#endif
 
 #ifndef TARGET_N64
 #include <stdio.h>  /* GE_ROOM_AUDIT portal-corruption diagnostic */

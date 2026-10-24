@@ -15,7 +15,9 @@ def stagedSupportManifest = file("$buildDir/generated/supportManifest")
 // engine still has to run before this APK can be published (android/README.md,
 // "ARM64 status"); -PmidasAbis=armeabi-v7a still builds the interim 32-bit
 // APK, with a warning.
-def supportedAbis = ["arm64-v8a", "armeabi-v7a"]
+// x86_64 is a developer-only ABI: it is the same LP64 engine as arm64, so it reproduces 64-bit
+// bugs on the Android emulator. It is never part of the universal release APK.
+def supportedAbis = ["arm64-v8a", "armeabi-v7a", "x86_64"]
 def requestedAbis = (findProperty("midasAbis") ?: "arm64-v8a,armeabi-v7a").toString()
         .split(",")
         .collect { it.trim() }

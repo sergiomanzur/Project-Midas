@@ -6116,6 +6116,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
                     PROMOTE(rodata->Vertices);
                     PROMOTE(rodata->CollisionVertices);
                     PROMOTE(rodata->PointUsage);
+#ifndef PORT_LP64 /* a Vertex is 16 bytes here: model64.c resolves the related-node words */
                     for (i = 0; i < rodata->numCollisionVertices; i++)
                     {
 #ifndef TARGET_N64
@@ -6148,6 +6149,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
 #endif
                         PROMOTE(rodata->CollisionVertices[i].LinkedTo);
                     }
+#endif
                     rodata->BaseAddr = (void *)fileramaddr;
                     break;
                 }
@@ -6347,7 +6349,11 @@ void portModelCollisionAudit(ModelNode *node, const char *name)
 
             for (i = 0; i < rodata->numCollisionVertices; i++)
             {
+#ifdef PORT_LP64
+                ModelNode  *rel = (rodata->CollisionRelatedNodes != NULL) ? rodata->CollisionRelatedNodes[i] : NULL;
+#else
                 ModelNode  *rel = (ModelNode *) rodata->CollisionVertices[i].CollisionRelatedNode;
+#endif
                 s32         idx = rodata->CollisionVertices[i].CollisionRelatedIndex;
                 const char *fault = NULL;
 

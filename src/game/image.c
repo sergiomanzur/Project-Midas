@@ -2642,7 +2642,8 @@ void texLoad(s32 *updateword, struct texpool *pool)
                     if (warned < 12)
                     {
                         warned++;
-                        printf("ge: TEXOOM: texnum %d cannot fit - pointing at pool start (pool %p, %d bytes free)\n",
+                        extern void portConLogf(const char *fmt, ...);
+                        portConLogf("ge: TEXOOM: texnum %d cannot fit - pointing at pool start (pool %p, %d bytes free)\n",
                                (s32) g_TexNumToLoad, (void *) pool, texFreeBytesInBuffer(pool));
                     }
                 }

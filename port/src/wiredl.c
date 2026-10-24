@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 #define WIRE_MAX_RANGES 512  /* room DLs are registered per streamed room */
-#define WIRE_CACHE_SIZE 1024
+#define WIRE_CACHE_SIZE 8192
 
 static struct {
     const u8 *lo;
@@ -35,11 +35,26 @@ static struct {
     Gfx *dst;
 } s_cache[WIRE_CACHE_SIZE];
 
+static void portWireDLPurge(const u8 *a, const u8 *b)
+{
+    int slot;
+
+    for (slot = 0; slot < WIRE_CACHE_SIZE; slot++) {
+        if (s_cache[slot].src != NULL && (const u8 *) s_cache[slot].src >= a && (const u8 *) s_cache[slot].src < b) {
+            s_cache[slot].src = NULL;
+            s_cache[slot].dst = NULL;
+        }
+    }
+}
+
 void portWireDLRegister(const void *lo, const void *hi)
 {
     if (lo == NULL || hi == NULL || hi <= lo) {
         return;
     }
+    /* the buffer may have held a different wire list before (menu models share
+     * one scratch region): never serve an old expansion of the same address */
+    portWireDLPurge((const u8 *) lo, (const u8 *) hi);
     if (s_rangeCount >= WIRE_MAX_RANGES) {
         return;
     }
@@ -60,6 +75,7 @@ void portWireDLUnregister(const void *lo, const void *hi)
     if (a == NULL || b == NULL || b <= a) {
         return;
     }
+    portWireDLPurge(a, b);
     for (i = 0; i < s_rangeCount; ) {
         if (s_ranges[i].lo < b && s_ranges[i].hi > a) {
             s_ranges[i] = s_ranges[--s_rangeCount];

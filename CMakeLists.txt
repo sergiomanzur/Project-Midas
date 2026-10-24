@@ -21,7 +21,8 @@ if(ANDROID)
     # bring-up kept for older devices: it must never be the release's only ABI
     # (that is what made v1.0.1 uninstallable on 64-bit-only phones), but the
     # universal APK carries both.
-    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+        # x86_64 is developer-only (emulator): the same LP64 engine as arm64.
         set(GE_ANDROID_ARM64 ON)
         message(STATUS "Android ABI: arm64-v8a (primary)")
     elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")

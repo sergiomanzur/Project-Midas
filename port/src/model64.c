@@ -346,6 +346,48 @@ static void conv_rodata(ModelConv *c, union ModelRoData *d, const u8 *w, int op)
         d->DisplayListCollisions.ModelType = (s16) R16(w, 0x18);
         d->DisplayListCollisions.RwDataIndex = R16(w, 0x1A);
         d->DisplayListCollisions.BaseAddr = base;
+#ifdef PORT_LP64
+        d->DisplayListCollisions.CollisionRelatedNodes = NULL;
+        {
+            /* A Vertex is the 16-byte Vtx, so the collision vertices' related-node word
+             * (+0x8) cannot hold a host pointer: resolve it once into a side table. The
+             * generator emitted it as two s16, so on little-endian its halves are swapped
+             * (and so is the s16 related index at +0xC); normalise in place, once. */
+            s32 ncv = d->DisplayListCollisions.numCollisionVertices;
+            u8 *cv = (u8 *) d->DisplayListCollisions.CollisionVertices;
+
+            if (ncv > 0 && cv != NULL) {
+                ModelNode **tab = (ModelNode **) mempAllocBytesInBank((u32) ncv * (u32) sizeof(ModelNode *), MEMPOOL_STAGE);
+
+                if (tab != NULL) {
+                    s32 k;
+
+                    memset(tab, 0, (size_t) ncv * sizeof(ModelNode *));
+                    for (k = 0; k < ncv; k++) {
+                        u8 *vv = cv + (size_t) k * 16;
+                        u32 wv;
+
+                        memcpy(&wv, vv + 8, 4);
+                        if (wv != 0 && !is_wire(wv)) {
+                            u32 sw = (wv << 16) | (wv >> 16);
+
+                            if (is_wire(sw)) {
+                                u16 ri;
+
+                                wv = sw;
+                                memcpy(vv + 8, &wv, 4);
+                                memcpy(&ri, vv + 12, 2);
+                                ri = (u16) ((ri >> 8) | (ri << 8));
+                                memcpy(vv + 12, &ri, 2);
+                            }
+                        }
+                        tab[k] = is_wire(wv) ? find_node(c, wv) : NULL;
+                    }
+                    d->DisplayListCollisions.CollisionRelatedNodes = tab;
+                }
+            }
+        }
+#endif
         {
             static int said;
             if (said < 6 && c->name != NULL && strncmp(c->name, "Chead", 5) == 0) {

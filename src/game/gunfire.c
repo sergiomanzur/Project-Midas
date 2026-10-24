@@ -7298,11 +7298,11 @@ static Gfx *portTargetRectQ(Gfx *g, s32 x1q, s32 y1q, s32 x2q, s32 y2q)
     return g + 1;
 }
 
-static void portDrawTargetPlus(s32 *gdl)
+static void portDrawTargetPlus(Gfx **gdl)
 {
     extern f32 portAimReachX(void);
     extern f32 g_bondviewSceneWideFactor;
-    Gfx *g = (Gfx *) *gdl;
+    Gfx *g = *gdl;
     f32 reachx = portAimReachX();
     f32 fx = g_CurrentPlayer->crosshair_angle.f[0];
     f32 fy = g_CurrentPlayer->crosshair_angle.f[1];
@@ -7380,13 +7380,13 @@ static void portDrawTargetPlus(s32 *gdl)
     {
         PORT_HUD_ANCHOR_OFF(g);
     }
-    *gdl = (s32) g;
+    *gdl = g;
 }
 #endif
 
-void gunDrawSight(s32 *gdl) {
+void gunDrawSight(Gfx **gdl) {
 
-    s32 sp54;
+    Gfx *sp54; /* a Gfx pointer: as an s32 its address was passed on as Gfx ** and read 8 bytes */
     f32 xypos[2];
     f32 halfedxy[2];
 
@@ -7429,7 +7429,7 @@ void gunDrawSight(s32 *gdl) {
              * repointing the sight's SETTIMG at that copy. */
             extern s32 portPlayerCrosshairColor(s32 player);
             extern const void *portTexCrosshairCopyFor(s32 rgb);
-            Gfx *from = (Gfx *) sp54;
+            Gfx *from = sp54;
             const s32 want = portPlayerCrosshairColor(get_cur_playernum());
 
             texSelect(&sp54, crosshairimage, 4, 0, 0);
@@ -7438,7 +7438,7 @@ void gunDrawSight(s32 *gdl) {
                 const void *copy = portTexCrosshairCopyFor(want);
                 Gfx *g;
 
-                for (g = from; copy != NULL && g < (Gfx *) sp54; g++)
+                for (g = from; copy != NULL && g < sp54; g++)
                 {
                     if ((g->words.w0 >> 24) == (u32) (u8) G_SETTIMG
                         && g->words.w1 == (u32) (uintptr_t) crosshairimage->index)
@@ -7476,21 +7476,21 @@ void gunDrawSight(s32 *gdl) {
 
             if (reachx > 1.001f)
             {
-                Gfx *agdl = (Gfx *) sp54;
+                Gfx *agdl = sp54;
                 PORT_HUD_ANCHOR(agdl, PORT_HUD_ANCHOR_SPAN);
-                sp54 = (s32) agdl;
+                sp54 = agdl;
                 xypos[0] = bondviewAimUnpinX(xypos[0]);
                 halfedxy[0] = halfedxy[0] / g_bondviewSceneWideFactor;
             }
             /* CROSSHAIR COLOUR: bondwalk2.c owns the tint-or-vanilla
              * decision for every crosshair sprite in the game. */
-            portDisplayCrosshairImage((Gfx **) &sp54, xypos, halfedxy, 0x20, 0x20, 0x6E,
+            portDisplayCrosshairImage(&sp54, xypos, halfedxy, 0x20, 0x20, 0x6E,
                                       (crosshairimage->level > 0));
             if (reachx > 1.001f)
             {
-                Gfx *agdl = (Gfx *) sp54;
+                Gfx *agdl = sp54;
                 PORT_HUD_ANCHOR_OFF(agdl);
-                sp54 = (s32) agdl;
+                sp54 = agdl;
             }
         }
 #else

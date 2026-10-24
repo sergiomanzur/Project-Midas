@@ -712,10 +712,20 @@ typedef union
                 s16 t; /* 0xa */
             };
 
+#ifdef PORT_LP64
+            /* PORT: a Vertex must stay the 16-byte N64 Vtx. With real pointers here it grew to 24
+             * bytes on a 64-bit host, so every vertex array indexed as Vertex[] (vtxstore, the
+             * per-instance vertex copies, the film strip) no longer lined up with the 16-byte
+             * display-list vertices. Collision-only: the wire word, resolved through the
+             * CollisionRelatedNodes side table of ModelRoData_DisplayList_CollisionRecord. */
+            u32 LinkedTo;
+            u32 CollisionRelatedNode; /* 0x8 */
+#else
             struct Vertex *LinkedTo;
 
             /* Collision vertices only: points to related model node. */
             void *CollisionRelatedNode; /* 0x8 */
+#endif
         };
 
         union
@@ -743,6 +753,9 @@ typedef union
             };
         };
     } Vertex;
+#ifdef PORT_LP64
+    typedef char port_vertex_is_16_bytes[(sizeof(Vertex) == 16) ? 1 : -1];
+#endif
 
     #pragma region OpenFlight Records
     /*
@@ -1304,6 +1317,10 @@ typedef union
             s16      ModelType;            /*0x18*/
             u16      RwDataIndex;          /*0x1A*/
             void    *BaseAddr;             /*0x1C*/
+#ifdef PORT_LP64
+            /* host-only: CollisionVertices[i].CollisionRelatedNode as a real node pointer */
+            struct ModelNode **CollisionRelatedNodes;
+#endif
 
         } ModelRoData_DisplayList_CollisionRecord;
 
@@ -4271,6 +4288,10 @@ struct font {
 	s32 kerning[13 * 13];
 	struct fontchar chars[94]; // can be 135 in PAL
 };
+
+#ifdef PORT_LP64
+#include "port_lp64_protos.h"
+#endif
 
 #endif
 

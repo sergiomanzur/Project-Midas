@@ -3387,9 +3387,15 @@ after_opcode:
         paintval += 50;
     }
 
+#ifdef PORT_LP64
+    /* a Vertex has no room for a host pointer: the related node comes from the side table */
+    relatednode = (((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionRelatedNodes != NULL)
+                      ? ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionRelatedNodes[bestindex] : NULL;
+#else
     relatednode = (ModelNode *) ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode;
+#endif
 
-    if (((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode != NULL)
+    if (relatednode != NULL)
     {
         relatedrodata = &relatednode->Data->DisplayListCollisions;
         relatedrwdata = (ModelRwData_DisplayList_CollisionRecord *) modelGetNodeRwData(model, relatednode);
