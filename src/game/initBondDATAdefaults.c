@@ -96,11 +96,15 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
     }
 #endif
 
-    animInit(&g_CurrentPlayer->model, &player_gait_object_header, &g_CurrentPlayer->field_654);
-    modelSetScale(&g_CurrentPlayer->model, IDO_POINT_ONE);
+#ifdef PORT_LP64
+    memset(GAITMODEL(g_CurrentPlayer), 0, sizeof(Model));
+    memset(g_CurrentPlayer->hostgaitdatas, 0, sizeof(g_CurrentPlayer->hostgaitdatas));
+#endif
+    animInit(GAITMODEL(g_CurrentPlayer), &player_gait_object_header, (u32 *) GAITDATAS(g_CurrentPlayer));
+    modelSetScale(GAITMODEL(g_CurrentPlayer), IDO_POINT_ONE);
 
 #if defined (BUGFIX_R1)
-    modelSetAnimPlaySpeed(&g_CurrentPlayer->model, ANIMRATE, 0.0f);
+    modelSetAnimPlaySpeed(GAITMODEL(g_CurrentPlayer), ANIMRATE, 0.0f);
 #endif
 
     g_CurrentPlayer->headanim = 0;
@@ -169,15 +173,15 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
 
     renderData = D_8002A790;
 
-    modelSetAnimation(&g_CurrentPlayer->model, (struct ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_idle], 0, 0.0f, 0.5f, 0.0f);
+    modelSetAnimation(GAITMODEL(g_CurrentPlayer), (struct ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_idle], 0, 0.0f, 0.5f, 0.0f);
 
-    subcalcpos(&g_CurrentPlayer->model);
+    subcalcpos(GAITMODEL(g_CurrentPlayer));
     matrix_4x4_set_identity(&identityMatrix);
 
     renderData.basemtx = &identityMatrix;
     renderData.mtxlist = &g_CurrentPlayer->bondheadmatrices[0];
 
-    subcalcmatrices(&renderData, &g_CurrentPlayer->model);
+    subcalcmatrices(&renderData, GAITMODEL(g_CurrentPlayer));
 
     g_CurrentPlayer->standheight = g_CurrentPlayer->bondheadmatrices[0].m[3][1];
     g_CurrentPlayer->standbodyoffset.x = 0.0f;
@@ -185,7 +189,7 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
     g_CurrentPlayer->standbodyoffset.z = g_CurrentPlayer->bondheadmatrices[1].m[3][2] - g_CurrentPlayer->bondheadmatrices[0].m[3][2];
 
     modelSetAnimation(
-        &g_CurrentPlayer->model,
+        GAITMODEL(g_CurrentPlayer),
         // match hack: addu address calculated backwards
         (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].anim_id + (s32)&ptr_animation_table->data),
         0,
@@ -193,9 +197,9 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
         0.5f,
         0.0f);
 
-    modelSetAnimLooping(&g_CurrentPlayer->model, g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].loopframe, 0.0f);
-    modelSetAnimEndFrame(&g_CurrentPlayer->model, g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].endframe);
-    modelSetAnimFlipFunction(&g_CurrentPlayer->model, bheadFlipAnimation);
+    modelSetAnimLooping(GAITMODEL(g_CurrentPlayer), g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].loopframe, 0.0f);
+    modelSetAnimEndFrame(GAITMODEL(g_CurrentPlayer), g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].endframe);
+    modelSetAnimFlipFunction(GAITMODEL(g_CurrentPlayer), bheadFlipAnimation);
 
     bheadUpdateIdleRoll();
 }

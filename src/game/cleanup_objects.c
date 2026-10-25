@@ -20,6 +20,19 @@ void cleanupObjects(s32 stage)
 {
     u32 *obj = (u32)g_CurrentSetup.propDefs;
 
+#ifdef PORT_LP64
+    {
+        /* PORT: the setup objects are still N64-layout words but objFree reads them as the wider
+         * host structs, so it chased garbage sound/embedment pointers on unload. Everything it
+         * releases is rebuilt when the next stage loads, so skip it. */
+        extern s32 g_portSetupFromRom;
+        if (g_portSetupFromRom)
+        {
+            return;
+        }
+    }
+#endif
+
     if (obj)
     {
         while (PDEF_TYPE(obj) != PROPDEF_END)

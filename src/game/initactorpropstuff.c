@@ -6,6 +6,8 @@
 #include "math.h"
 #include "math_floor.h"
 
+extern void portConLogf(const char *fmt, ...);
+
 
 /**
  * Gets the number of currently allocated heads and bodies

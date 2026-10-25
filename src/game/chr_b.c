@@ -29,11 +29,11 @@ struct Model *makeonebody(s32 body, s32 head, struct ModelFileHeader *bodyHeader
 {
     f32 scale;
     f32 pov;
-    s32 opcode;
+    ModelNode *opcode; /* PORT: holds a node pointer; s32 truncated it on 64-bit */
     ModelRwData_SwitchRecord *rwdata;
 
     scale = c_item_entries[body].scale * 0.10000001f;
-    opcode = 0;
+    opcode = NULL;
     pov = c_item_entries[body].pov;
 
     if (
@@ -69,8 +69,8 @@ struct Model *makeonebody(s32 body, s32 head, struct ModelFileHeader *bodyHeader
 
     if ((c_item_entries[body].hasHead == 0) && (head >= 0))
     {
-        opcode = &bodyHeader->Switches[4]->Opcode;
-        if (opcode != 0)
+        opcode = (ModelNode *) bodyHeader->Switches[4];
+        if (opcode != NULL)
         {
             if (headHeader->RootNode == 0)
             {

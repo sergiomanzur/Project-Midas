@@ -27,10 +27,19 @@
 #include <ultra64.h>
 
 extern int printf(const char *, ...);
+extern void portConLogf(const char *fmt, ...);
 
 int portPtrLooksBad(const void *p)
 {
-    u32 v = (u32) p;
+    u32 v = (u32) (uintptr_t) p;
+
+    /* a 32-bit value sign-extended into a pointer slot (e.g. a truncated host pointer) */
+#ifdef PORT_LP64
+    if (((uintptr_t) p >> 32) == 0xFFFFFFFFu)
+    {
+        return 1;
+    }
+#endif
 
     /* Conservative on purpose: flag only a small integer where a pointer
      * belongs, or misalignment. Host address ranges differ per OS (Linux puts
@@ -55,7 +64,7 @@ void portModelAuditReport(const char *site, const void *badptr,
         return;
     }
     budget--;
-    printf("ge: MODEL AUDIT: %s bad ptr %p (ctx %p %p)%s\n",
+    portConLogf("ge: MODEL AUDIT: %s bad ptr %p (ctx %p %p)%s\n",
            site, badptr, ctx1, ctx2,
            budget == 0 ? " [report cap reached]" : "");
 }

@@ -27,11 +27,28 @@ void init_path_table_links(void)
     waypoint *waypoints;
     s32 waypointIndex;
     waygroup *currentWaypoint;
+    s32 waypointLimit = 0x0FFFFFFF;
+    s32 groupLimit = 0x0FFFFFFF;
 
     hasError = 0;
     setup = &g_CurrentSetup;
     waypoints = setup->pathwaypoints;
     groups = setup->waypointgroups;
+
+    /* PORT: the host tables built from a ROM setup are bounded (compiled setups
+     * keep the historic unbounded walk, they are terminated in data anyway). */
+    {
+        extern s32 g_portNumWaypoints;
+        extern s32 g_portNumWaygroups;
+        if (g_portNumWaypoints > 0)
+        {
+            waypointLimit = g_portNumWaypoints;
+        }
+        if (g_portNumWaygroups > 0)
+        {
+            groupLimit = g_portNumWaygroups;
+        }
+    }
 
     if (groups);
     if (groups);
@@ -45,12 +62,17 @@ void init_path_table_links(void)
         waypointIndex = 0;
         currentWaypoint = waypoints;
 
-        while (((waypoint *) currentWaypoint)->padID >= 0)
+        while ((waypointIndex < waypointLimit) && (((waypoint *) currentWaypoint)->padID >= 0))
         {
             neighbourIndex = 0;
 
             while ((neighbourNum = ((waypoint *) currentWaypoint)->neighbours[neighbourIndex]) >= 0)
             {
+                if (neighbourNum >= waypointLimit)
+                {
+                    hasError = 1;
+                    break;
+                }
                 if (neighbourNum == waypointIndex)
                 {
                     if (g_CurrentSetup.padnames != NULL)
@@ -159,6 +181,11 @@ void init_path_table_links(void)
 
                     while (waypointNum >= 0)
                     {
+                        if (waypointNum >= groupLimit)
+                        {
+                            hasError = 1;
+                            break;
+                        }
                         if (waypointNum == validationGroupIndex)
                         {
                             if (g_CurrentSetup.boundpadnames != NULL)
@@ -243,7 +270,7 @@ void init_path_table_links(void)
                     validationGroupCursors[-3]++;
                     validationGroup = validationGroupCursors[-3];
                 }
-                while (validationGroupCursors[-3]->neighbours != NULL);
+                while (validationGroupIndex < groupLimit && validationGroupCursors[-3]->neighbours != NULL);
             }
         }
         if ((waypoints != NULL) && (groups != NULL))
@@ -346,7 +373,7 @@ void init_path_table_links(void)
                     memberIndex = 0;
                     floodWaypointNum = floodGroup->waypoints[memberIndex];
 
-                    while (floodWaypointNum >= 0)
+                    while (floodWaypointNum >= 0 && floodWaypointNum < waypointLimit)
                     {
                         floodWaypoint = &waypoints[floodWaypointNum];
 
@@ -372,7 +399,7 @@ void init_path_table_links(void)
                         changed = 0;
                         disconnected = 0;
 
-                        while (floodWaypointNum >= 0)
+                        while (floodWaypointNum >= 0 && floodWaypointNum < waypointLimit)
                         {
                             floodWaypoint = &waypoints[floodWaypointNum];
 
@@ -380,6 +407,7 @@ void init_path_table_links(void)
                             {
                                 floodReverseIndex = 0;
                                 linkedWaypointNum = floodWaypoint->neighbours[floodReverseIndex];
+                                if (linkedWaypointNum >= waypointLimit) linkedWaypointNum = -1;
 
                                 if (linkedWaypointNum >= 0)
                                 {
@@ -395,8 +423,9 @@ void init_path_table_links(void)
 
                                         floodReverseIndex++;
                                         linkedWaypointNum = floodWaypoint->neighbours[floodReverseIndex];
+                                if (linkedWaypointNum >= waypointLimit) linkedWaypointNum = -1;
                                     }
-                                    while (linkedWaypointNum >= 0);
+                                    while (linkedWaypointNum >= 0 && linkedWaypointNum < waypointLimit);
                                 }
                             }
 
@@ -407,7 +436,7 @@ void init_path_table_links(void)
                         memberIndex = 0;
                         floodWaypointNum = floodGroup->waypoints[memberIndex];
 
-                        while (floodWaypointNum >= 0)
+                        while (floodWaypointNum >= 0 && floodWaypointNum < waypointLimit)
                         {
                             memberIndex++;
                             floodWaypoint = &waypoints[floodWaypointNum];
@@ -452,11 +481,26 @@ void init_path_table_links(void)
                     currentWaypoint = ((waygroup *) currentWaypoint) + 1;
                     floodGroup = (waygroup *) currentWaypoint;
                 }
-                while (((waygroup *) currentWaypoint)->neighbours != NULL);
+                while (assignmentGroupIndex < groupLimit && ((waygroup *) currentWaypoint)->neighbours != NULL);
             }
         }
     }
 
+#ifndef TARGET_N64
+    /* PORT: this is the original's "please fix the loc errors" freeze. With
+     * path data rebuilt from a ROM image it trips on values the host has to
+     * reinterpret, and freezing the game is worse than a warning. */
+    if (hasError)
+    {
+        extern void portConLogf(const char *fmt, ...);
+        static s32 said;
+        if (!said)
+        {
+            said = 1;
+            portConLogf("ge: path table reported errors - continuing (port)\n");
+        }
+    }
+#else
     if (hasError)
     {
 #ifdef DEBUG
@@ -466,6 +510,8 @@ void init_path_table_links(void)
         {
             // Intentional crash/freeze
         }
- 
+
     }
+#endif
 }
+

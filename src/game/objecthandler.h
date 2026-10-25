@@ -20,9 +20,19 @@ struct AnimModelSlot {
     s16 unk00;
     s16 unk02;
     s32 unk04;
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    /* The slots are cast to Model*; on a 64-bit host Model's pointer fields
+     * are 8 bytes, so the slot fields that mirror them (unk08 = obj,
+     * unk0c = render_pos, unk10 = datas) must move to Model's offsets. */
+    s32 unk06;
+    void *unk08;   /* Model.obj        @0x10 */
+    void *unk0c;   /* Model.render_pos @0x18 */
+    void *unk10;   /* Model.datas      @0x20 */
+#else
     s32 unk08;
     s32 unk0c;
     void *unk10;
+#endif
     s32 unk14;
     s32 unk18;
     s32 unk1c;
@@ -66,6 +76,12 @@ struct AnimModelSlot {
     s32 unkb4;
     s32 unkb8;
 
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    /* A slot is a Model in disguise; make sure the Model fields never write
+     * past the slot. */
+    u8  _tail[sizeof(Model)];
+#endif
+
     // is this struct size 0xbc or 0xc0 ?
     //s32 unkbc;
 };
@@ -74,12 +90,23 @@ struct ModelSlot {
     s16 unk00;
     s16 unk02;
     s32 unk04;
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    s32 unk06;     /* pad: keep unk08 over Model.obj */
+    void *unk08;   /* Model.obj        @0x10 */
+    void *unk0c;   /* Model.render_pos @0x18 */
+    void *unk10;   /* Model.datas      @0x20 */
+    s32 unk14;
+    s32 unk18;
+    s32 unk1c;
+    u8  _tail[sizeof(Model)];
+#else
     s32 unk08;
     s32 unk0c;
     void *unk10;
     s32 unk14;
     s32 unk18;
     s32 unk1c;
+#endif
 };
 
 extern struct AnimModelSlot *g_AnimModelSlots;

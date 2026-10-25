@@ -40,6 +40,9 @@
 #include "dyn.h"
 #include "assets/obseg/text/LtitleE.h"
 #include "matrixmath.h"
+#ifdef PORT_LP64
+extern char *strchr(const char *s, int c); /* implicit int return truncated the pointer */
+#endif
 #include "bg.h"
 #include "chrai.h"
 #include "title.h"

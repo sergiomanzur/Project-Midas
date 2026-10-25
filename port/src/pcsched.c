@@ -40,26 +40,54 @@ extern void portConLogf(const char *fmt, ...);
  * with the installed BG-vertex segment 0x0E). Never free()able.
  */
 /* One reservation attempt at a hinted high address. Returns NULL on miss. */
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000 /* Linux 4.17+; ignored by older kernels */
+#endif
+
+/* The game stores host addresses in 32-bit slots (osPiStartDma's u32 devAddr,
+ * memp's s32 pool starts, u32 display-list words). On a 64-bit host "above the
+ * N64 segment range" is not enough: the arena must also stay below the 2 GB
+ * line, or every truncation becomes a wild pointer. On 32-bit this is a no-op
+ * (the whole address space already satisfies it). */
+static int portAllocAddrOk(void *p)
+{
+    uintptr_t a = (uintptr_t) p;
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    return a >= 0x10000000u && a < 0x80000000u;
+#else
+    return a >= 0x10000000u;
+#endif
+}
+
 static void *portAllocHighRaw(void *hint, u32 size)
 {
     void *p;
 #ifdef _WIN32
     p = VirtualAlloc(hint, size, 0x3000 /* MEM_COMMIT|MEM_RESERVE */, 0x04 /* PAGE_READWRITE */);
 #else
+    /* A plain hint is advisory: on 64-bit Android the kernel returns an
+     * address near mmap_base (0x7f......), the arena silently leaves the
+     * 32-bit-addressable range, and the first romCopy truncates it. Force the
+     * hinted address where the kernel supports it. */
+#if UINTPTR_MAX > 0xFFFFFFFFu
+    p = mmap(hint, size, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+#else
     p = mmap(hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
     if (p == MAP_FAILED)
     {
         p = NULL;
     }
-    else if ((uintptr_t) p < 0x10000000u)
+    else if (!portAllocAddrOk(p))
     {
         munmap(p, size);
         p = NULL;
     }
 #endif
-    if (p != NULL && (uintptr_t) p < 0x10000000u)
+    if (p != NULL && !portAllocAddrOk(p))
     {
-        p = NULL; /* Windows granted a low address - unusable here (leak it; never-freed by design) */
+        p = NULL; /* the hint was not honoured - unusable here (leak it; never-freed by design) */
     }
     return p; /* VirtualAlloc/anonymous mmap memory arrives zeroed */
 }
@@ -397,9 +425,16 @@ void *portGetMempArena(u32 *outsize)
             arena = VirtualAlloc(NULL, PORT_MEMP_ARENA_SIZE, 0x3000, 0x04);
         }
 #else
-        /* glibc happens to mmap allocations this large (high addresses),
-         * but make the >= 0x10000000 guarantee explicit. */
-        arena = portAllocHigh(PORT_MEMP_ARENA_SIZE);
+        /* Give memp its OWN mapping: portAllocHigh() would hand it the whole
+         * 64 MB shared arena, and every later small allocation (model DL
+         * conversions, texture scratch) would fail with "found no high
+         * address" - the model's display list then stayed in wire format
+         * and crashed the renderer. */
+        arena = portAllocHighDedicated(PORT_MEMP_ARENA_SIZE);
+        if (arena == NULL)
+        {
+            arena = portAllocHigh(PORT_MEMP_ARENA_SIZE);
+        }
 #endif
         if (arena == NULL)
         {

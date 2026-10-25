@@ -745,12 +745,46 @@ static int inputAllowAnyPad(void)
     return e;
 }
 
+/* Android presents its motion sensors as SDL joysticks; they must never take a
+ * player slot (the accelerometer was claiming player 1 and pushing the touch
+ * pad to player 2). */
+static int inputDeviceIsAndroidSensor(int jidx)
+{
+#ifdef __ANDROID__
+    static const char *const sensors[] = {
+        "Accelerometer", "Gyroscope", "Magnetometer", "Rotation Vector",
+        "Gravity", "Linear Acceleration", "Game Rotation Vector"
+    };
+    const char *n = SDL_JoystickNameForIndex(jidx);
+    int i;
+
+    if (n == NULL)
+    {
+        return 0;
+    }
+    for (i = 0; i < (int) (sizeof(sensors) / sizeof(sensors[0])); i++)
+    {
+        if (SDL_strstr(n, sensors[i]) != NULL)
+        {
+            return 1;
+        }
+    }
+#else
+    (void) jidx;
+#endif
+    return 0;
+}
+
 /* Is this device actually game input? A mapped controller always is, an
  * unmapped one must report a known joystick type (so e.g. Hall-effect keyboards
  * exposing a HID gamepad don't steal a slot); an explicit padN=<guid> pin still
  * forces any device. */
 static int inputDeviceIsGameInput(int jidx)
 {
+    if (inputDeviceIsAndroidSensor(jidx))
+    {
+        return 0;
+    }
     if (SDL_IsGameController(jidx))
     {
         return 1;
@@ -1668,7 +1702,7 @@ static void inputAssignSlotsEx(int full)
         }
         for (jidx = 0; jidx < njoys; jidx++)
         {
-            if (claimed[jidx] || (inputDeviceIsGameInput(jidx) ? 0 : 1) != tier)
+            if (claimed[jidx] || inputDeviceIsAndroidSensor(jidx) || (inputDeviceIsGameInput(jidx) ? 0 : 1) != tier)
             {
                 continue;
             }

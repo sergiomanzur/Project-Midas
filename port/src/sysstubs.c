@@ -35,15 +35,21 @@ const char *sysArgGetString(const char *arg)
 
 void sysFatalError(const char *fmt, ...)
 {
+    char buf[1024];
     va_list ap;
+
     va_start(ap, fmt);
-    /* stderr only, not portConLogf: exit(1) follows, so a ring copy is never
-     * seen, and shader info logs (gfx_opengl.cpp) can outgrow its buffer */
-    fprintf(stderr, "ge: FATAL: ");
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\n");
+    vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
+
+    fprintf(stderr, "ge: FATAL: %s\n", buf);
     fflush(NULL);
+    /* Android: stderr is not in logcat, and exit(1) follows - mirror the
+     * reason to the native log so a status-1 exit is diagnosable. */
+    {
+        extern void portConLogf(const char *fmt, ...);
+        portConLogf("ge: FATAL: %s", buf);
+    }
     exit(1);
 }
 

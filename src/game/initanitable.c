@@ -3,11 +3,17 @@
 #include "initanitable.h"
 #include "objecthandler.h"
 #include "bondgame.h"
+#include "port_animseg.h"
+
+extern void portConLogf(const char *fmt, ...);
 
 //bss
 
 // Where animation frames are saved. Can possibly hold as much as nine, but the game will ever store four at maximum.
-char animations_frame_buffer[0x2D0];
+/* PORT: the frame buffer must live in the low arena - loadAnimationFrame does
+ * 32-bit address arithmetic on animBufferPtr2 and returns the frame address in
+ * an s32, so a .bss (high) buffer truncates on a 64-bit host. */
+char *port_animations_frame_buffer;
 
 // Msg Queue stuff (unused)
 OSMesgQueue animMsgQ;
@@ -20,11 +26,17 @@ struct animation_table_data * ptr_animation_table;
 //data
 struct bondstruct_unk_animation_related D_80029D60 = {
     NULL,
-    &animations_frame_buffer, // Two pointers. One always points to the start of the buffer, the other can be modified.
-    &animations_frame_buffer
+    NULL,
+    NULL
 };
 
-s32 animation_table_ptrs1[] = {
+/* PORT: was s32[] (4-byte entries, same width as a pointer on the 32-bit PC
+ * build). expand_ani_table_entries walks both tables as pointers, so on a
+ * 64-bit host a 4-byte table made it stride 8 bytes, run past the 0
+ * terminator and double-expand animation_table_ptrs2 into a wild address
+ * (arm64 crashed in expand_ani_table_entries). Pointer-width entries keep
+ * the one shared walker correct on both builds. */
+struct ModelAnimation *animation_table_ptrs1[] = {
     PTR_ANIM_idle,
     PTR_ANIM_fire_standing,
     PTR_ANIM_fire_standing_fast,
@@ -219,8 +231,6 @@ struct ModelAnimation *animation_table_ptrs2[] = {
 };
 
 
-extern u32 _animation_entriesSegmentRomStart[];
-
 struct anim_entry
 {
     s32 unk00;
@@ -246,7 +256,7 @@ void expand_ani_table_entries(s32** arg0)
 
     for (var_v0 = arg0; *var_v0 != 0; var_v0++) {
         if (*var_v0 != (s32*)1) {
-            **var_v0 += (s32)&_animation_entriesSegmentRomStart;
+            **var_v0 += (s32) (uintptr_t) port_animation_entriesSegmentRomStart;
         }
     }
 }
@@ -254,7 +264,18 @@ void expand_ani_table_entries(s32** arg0)
 void alloc_load_expand_ani_table(void)
 {
     s32 animsDataSegmentSize;
-    
+
+    /* Low arena: loadAnimationFrame does 32-bit arithmetic on these. */
+    {
+        extern void *portAllocHigh(u32 size);
+        if (port_animations_frame_buffer == NULL)
+        {
+            port_animations_frame_buffer = portAllocHigh(0x2D0);
+        }
+        D_80029D60.animBufferPtr1 = port_animations_frame_buffer;
+        D_80029D60.animBufferPtr2 = port_animations_frame_buffer;
+    }
+
     osCreateMesgQueue(&animMsgQ, animMesg, 8);
     initAnimationsBuffer(&D_80029D60, &animMsgQ, &dword_CODE_bss_80069458);
     
@@ -262,7 +283,7 @@ void alloc_load_expand_ani_table(void)
     
     ptr_animation_table = mempAllocBytesInBank(animsDataSegmentSize, MEMPOOL_PERMANENT);
 
-    romCopy(ptr_animation_table, &_animation_dataSegmentRomStart, animsDataSegmentSize);
+    romCopy(ptr_animation_table, port_animation_dataSegmentRomStart, animsDataSegmentSize);
     expand_ani_table_entries((s32*)&animation_table_ptrs1);
     expand_ani_table_entries((s32*)&animation_table_ptrs2);
 }

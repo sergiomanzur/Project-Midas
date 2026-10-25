@@ -146,8 +146,51 @@ static void conRebuildVisRows(void)
     }
 }
 
+#if defined(__ANDROID__) && defined(PORT_LP64)
+#include <pthread.h>
+#include <unistd.h>
+/* The engine's own diagnostics go to stderr, which Android drops. Forward it to logcat. */
+static int s_errPipe[2];
+static void *portStderrPump(void *arg)
+{
+    char buf[1024];
+    ssize_t n;
+
+    (void) arg;
+    while ((n = read(s_errPipe[0], buf, sizeof(buf) - 1)) > 0)
+    {
+        buf[n] = '\0';
+        __android_log_write(ANDROID_LOG_INFO, "MidasStderr", buf);
+    }
+    return NULL;
+}
+
+static void portStderrRedirect(void)
+{
+    static int done;
+    pthread_t t;
+
+    if (done)
+    {
+        return;
+    }
+    done = 1;
+    if (pipe(s_errPipe) != 0)
+    {
+        return;
+    }
+    setvbuf(stderr, NULL, _IOLBF, 0);
+    dup2(s_errPipe[1], 2);
+    pthread_create(&t, NULL, portStderrPump, NULL);
+    pthread_detach(t);
+}
+#endif
+
 void portConInit(void)
 {
+#if defined(__ANDROID__) && defined(PORT_LP64)
+    portStderrRedirect();
+#endif
     memset(conBuf, 0, sizeof(conBuf));
     memset(conInput, 0, sizeof(conInput));
     memset(conHistory, 0, sizeof(conHistory));

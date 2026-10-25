@@ -278,6 +278,14 @@ void lvInit(void)
     lvl_c_debug_notice_list = 1;
     ptr_font_DL = mempAllocBytesInBank(size, MEMPOOL_PERMANENT);
     romCopy(ptr_font_DL, &_fontdlSegmentRomStart, size);
+#ifndef TARGET_N64
+    {   /* the copy is an 8-byte N64 display list (a host Gfx is 16 bytes) */
+        extern void portWireDLRegister(const void *lo, const void *hi);
+        extern void portConLogf(const char *fmt, ...);
+        portWireDLRegister(ptr_font_DL, (u8 *) ptr_font_DL + size);
+        portConLogf("ge: font dl %p size %d\n", (void *) ptr_font_DL, (int) size);
+    }
+#endif
 }
 
 /**

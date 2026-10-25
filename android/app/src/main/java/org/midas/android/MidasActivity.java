@@ -34,6 +34,18 @@ public class MidasActivity extends SDLActivity {
         boolean hasRom = RomStore.hasUsableRom(this);
         super.onCreate(savedInstanceState);
 
+        /* Test hook (adb am start -n org.midas.android/.RomActivity --es ge_stage dam):
+         * start straight into a mission. The engine reads GE_STAGE lazily on its
+         * first front-end tick, so setting it here is early enough. */
+        String stage = getIntent() != null ? getIntent().getStringExtra("ge_stage") : null;
+        if (stage != null && !stage.isEmpty()) {
+            try {
+                SDLActivity.nativeSetenv("GE_STAGE", stage);
+            } catch (Throwable ignored) {
+                // Not fatal: the game just starts at the normal menu.
+            }
+        }
+
         if (!hasRom) {
             // The launcher normally prevents this. If the game activity is
             // restored after its data was cleared, go back to the importer

@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include <platform_info.h>
 #ifndef TARGET_N64
 #include <stdlib.h> /* getenv for GE_SNDEVTQ */
 #endif
@@ -1124,6 +1125,15 @@ void sndSetPriority(ALSoundState *state, u8 priority)
  */
 u8 sndGetPlayingState(ALSoundState *state)
 {
+#ifdef PORT_LP64
+    /* PORT: setup objects are still N64-layout in memory, so a record's sound
+     * state field can hold other words of the record, not a pointer. */
+    if ((uintptr_t) state & 3 || ((uintptr_t) state >> 47) != 0 ||
+        ((uintptr_t) state >> 32 == 0 && ((uintptr_t) state < 0x50000000u || (uintptr_t) state >= 0x70000000u)))
+    {
+        return AL_STOPPED;
+    }
+#endif
     if (state != NULL)
     {
         return state->playingState;
@@ -1529,6 +1539,12 @@ void sndApplyVolumeAllSfxSlot(u16 volume)
 void sndSetScalerApplyVolumeAllSfxSlot(f32 volumeScale)
 {
     g_sndSfxVolumeScale = volumeScale;
+    /* arm64 bring-up: no sound player/SFX bank was built (see sndNewPlayerInit),
+     * so there is no slot table to scale. */
+    if (g_sndBootswitchSound || g_sndSfxSlotNaturalVolume == NULL)
+    {
+        return;
+    }
     sndApplyVolumeAllSfxSlot(sndGetSfxSlotFirstNaturalVolume());
 }
 
@@ -1538,6 +1554,10 @@ void sndSetScalerApplyVolumeAllSfxSlot(f32 volumeScale)
  */
 u16 sndGetSfxSlotNaturalVolume(u8 sfxIndex)
 {
+    if (g_sndSfxSlotNaturalVolume == NULL)
+    {
+        return 0;
+    }
     return g_sndSfxSlotNaturalVolume[sfxIndex];
 }
 
@@ -1551,6 +1571,14 @@ void sndSetSfxSlotVolume(u8 sfxIndex, u16 volume)
 
     ALSndpEvent evt;
     ALSoundState *item;
+
+    /* arm64 bring-up: with the sound bootswitch set there is no SFX bank and
+     * no sound-state list, so touching it dereferences NULL at stage load. */
+    if (g_sndBootswitchSound || g_sndSfxSlotNaturalVolume == NULL)
+    {
+        g_sndSfxSlotVolume[sfxIndex] = (s16) ((f32) volume * g_sndSfxVolumeScale);
+        return;
+    }
 
     item = (ALSoundState *)D_800243E4.node.next;
 

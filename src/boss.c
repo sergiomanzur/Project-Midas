@@ -373,7 +373,7 @@ void bossMainloop(void)
     u32 pendingGfx = 0;
     s32 freeGfx;
     s32 mainTickElapsed;
-    s32 rspReplyMsg;
+    OSMesg rspReplyMsg;
 
     u32 unused_stackpadding_[56];
 
@@ -475,6 +475,12 @@ void bossMainloop(void)
 #ifndef TARGET_N64
         // Double MEMA on PC to avoid blackout bugs
         g_CurentMaMallocValue *= 2;
+        if (sizeof(void *) == 8)
+        {
+            /* PORT: 64-bit Gfx commands are 16 bytes, so expanded room display lists are twice as
+             * large again; the room pool sized for 8-byte commands could not hold the level. */
+            g_CurentMaMallocValue *= 2;
+        }
 #endif
 
         memaReset(mempAllocBytesInBank(g_CurentMaMallocValue, MEMPOOL_STAGE), g_CurentMaMallocValue);
@@ -514,6 +520,19 @@ void bossMainloop(void)
         }
 #endif
         lvlStageLoad(g_StageNum);
+        {
+            /* PORT (arm64): the stage load leaves the gfx message queue's
+             * control block clobbered (its validCount/first/msgCount end up
+             * holding queue-shaped pointers). Rebuild it so the mission-start
+             * wait below receives retraces; the underlying overwrite is still
+             * to be found. */
+            if (gfxFrameMsgQ.validCount < 0 || gfxFrameMsgQ.validCount > gfxFrameMsgQ.msgCount ||
+                gfxFrameMsgQ.msgCount != 32 || gfxFrameMsgQ.msg == NULL ||
+                gfxFrameMsgQ.first < 0 || gfxFrameMsgQ.first >= gfxFrameMsgQ.msgCount)
+            {
+                osCreateMesgQueue(&gfxFrameMsgQ, &gfxFrameMsgBuf, 32);
+            }
+        }
 #ifndef TARGET_N64
         {
             extern void ge_dbg_vec(const char *tag, const f32 *v, s32 n);
@@ -565,7 +584,15 @@ void bossMainloop(void)
 
         while (g_MainStageNum < 0 || pendingGfx != 0)
         {
-            osRecvMesg(&gfxFrameMsgQ, (OSMesg *)&localGfxFrameMsg, OS_MESG_BLOCK);
+            s32 recvRc = osRecvMesg(&gfxFrameMsgQ, (OSMesg *)&localGfxFrameMsg, OS_MESG_BLOCK);
+
+            if (recvRc != 0 || localGfxFrameMsg == NULL)
+            {
+                /* A blocking recv can give up when the pump had no message
+                 * ready (osRecvMesg pumps a bounded number of times). The
+                 * vanilla code assumes it always returns one. */
+                continue;
+            }
 
             switch (localGfxFrameMsg->gen.type)
             {
@@ -848,8 +875,8 @@ void bossMainloop(void)
                                 indycommHostSendDump(taskGrabBuffer, (u8*)0x80000000, 0x400000);
                             }
 
-                            rspReplyMsg = (s32)(&localGfxDoneMsg);
-                            rspGfxTaskStart(firstGdl, gdl, 0, (s32*)rspReplyMsg);
+                            rspReplyMsg = (OSMesg) &localGfxDoneMsg;
+                            rspGfxTaskStart(firstGdl, gdl, 0, rspReplyMsg);
 
                             pendingGfx++;
                             memaSingleDefragPass();

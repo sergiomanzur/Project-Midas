@@ -104,6 +104,12 @@ typedef struct ALParam_s {
         f32             f;
         s32             i;
     } yetstillmoredata;
+#ifdef PORT_LP64
+    /* The start-voice params (ALStartParamAlt, 40 bytes with its 8-byte wave pointer) are written
+     * into ALParam slots. On a 64-bit host sizeof(ALParam) was 32, so each voice start overran its
+     * slot and clobbered the next slot's `next` pointer, corrupting the free list. */
+    s32                 port_pad[2];
+#endif
 } ALParam;
 
 typedef struct {
@@ -118,6 +124,9 @@ typedef struct {
     s32                         samples;
     struct ALWaveTable_s        *wave;
 } ALStartParamAlt;
+#ifdef PORT_LP64
+typedef char port_alstartparamalt_fits_alparam[(sizeof(ALStartParamAlt) <= sizeof(ALParam)) ? 1 : -1];
+#endif
 
 typedef struct {
     struct ALParam_s            *next;
@@ -195,8 +204,11 @@ typedef struct {
 } ALLowPass;
 
 typedef struct {
-    u32		input;
-    u32		output;
+    /* signed: reverb.c indexes r->input[-d->input]. As u32 the negated index became a huge
+     * positive offset on a 64-bit host, defeating the wrap-around checks in _loadBuffer /
+     * _saveBuffer so the delay lines read and wrote before their buffer (over other heap data). */
+    s32		input;
+    s32		output;
     s16		ffcoef;
     s16		fbcoef;
     s16		gain;

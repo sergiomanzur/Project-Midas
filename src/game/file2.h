@@ -26,6 +26,9 @@ extern ChrRecord *g_CurModelChr;
 
 u8 fileGetBondForFolder(u32 folder);
 void fileValidateSaves(void);
+/* PORT: this had no prototype, so callers (front.c's cheat menu) passed it
+ * through an implicit int return and the save pointer was truncated. */
+save_data *fileGetSaveForFoldernum(u32 folder);
 bool fileGetIsCheatUnlocked(save_data *save, s32 cheat);
 STAGESTATUS fileIsStageUnlockedAtDifficulty(s32 foldernum, LEVEL_SOLO_SEQUENCE levelid, DIFFICULTY difficulty);
 void fileUnlockStageInFolderAtDifficulty(s32 foldernum, LEVEL_SOLO_SEQUENCE levelid, DIFFICULTY difficulty, s32 newtime);

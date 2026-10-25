@@ -242,7 +242,7 @@ void bheadUpdate(f32 percent_speed, f32 speedsideways)
     lookvel = headLookDirection;
     upvel = headUpDirection;
 
-    abs_anim_speed = modelGetAbsAnimSpeed(&g_CurrentPlayer->model);
+    abs_anim_speed = modelGetAbsAnimSpeed(GAITMODEL(g_CurrentPlayer));
 
     if (g_CurrentPlayer->headanim == 0)
     {
@@ -280,35 +280,35 @@ void bheadUpdate(f32 percent_speed, f32 speedsideways)
     g_CurrentPlayer->resetheadtick = FALSE;
 
     modelSetAnimMergingEnabled(0);
-#ifndef TARGET_N64
+#ifdef PORT_LP64
     /* Bond's head/walk animation advances by the true fractional delta
      * (portAnimTicks), so the bob and root motion below update every tick
      * rather than only on 60Hz field ticks; the divisor below follows the same
      * quantity. */
-    modelTickAnimF(&g_CurrentPlayer->model, portAnimTicks(), 1);
+    modelTickAnimF(GAITMODEL(g_CurrentPlayer), portAnimTicks(), 1);
 #else
-    modelTickAnim(&g_CurrentPlayer->model, g_ClockTimer, 1);
+    modelTickAnim(GAITMODEL(g_CurrentPlayer), g_ClockTimer, 1);
 #endif
     modelSetAnimMergingEnabled((s32) isMergable);
 
-    subcalcpos(&g_CurrentPlayer->model);
+    subcalcpos(GAITMODEL(g_CurrentPlayer));
     matrix_4x4_set_identity(&sp40);
 
     renderData.basemtx = &sp40;
     renderData.mtxlist = &g_CurrentPlayer->bondheadmatrices[0];
 
-    subcalcmatrices(&renderData, &g_CurrentPlayer->model);
+    subcalcmatrices(&renderData, GAITMODEL(g_CurrentPlayer));
 
     g_CurrentPlayer->headbodyoffset.f[0] = g_CurrentPlayer->standbodyoffset.x;
     g_CurrentPlayer->headbodyoffset.f[1] = g_CurrentPlayer->standbodyoffset.y;
     g_CurrentPlayer->headbodyoffset.f[2] = g_CurrentPlayer->standbodyoffset.z;
 
-    getsuboffset(&g_CurrentPlayer->model, (struct float3 *) &offset);
+    getsuboffset(GAITMODEL(g_CurrentPlayer), (struct float3 *) &offset);
 
     offset.f[0] -= g_CurrentPlayer->bondheadmatrices[0].m[3][0];
     offset.f[2] -= g_CurrentPlayer->bondheadmatrices[0].m[3][2];
 
-    setsuboffset(&g_CurrentPlayer->model, (coord3d *) &offset);
+    setsuboffset(GAITMODEL(g_CurrentPlayer), (coord3d *) &offset);
 
     if (abs_anim_speed > 0.0f)
     {
@@ -490,7 +490,7 @@ void bheadAdjustAnimation(f32 speed)
                 }
 
                 modelSetAnimation(
-                    &g_CurrentPlayer->model,
+                    GAITMODEL(g_CurrentPlayer),
                     // match hack: addu address backwards
                     (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[i].anim_id + (s32)&ptr_animation_table->data),
                     (s32) g_CurrentPlayer->animFlipFlag,
@@ -498,15 +498,15 @@ void bheadAdjustAnimation(f32 speed)
                     0.5f,
                     12.0f);
 
-                modelSetAnimLooping(&g_CurrentPlayer->model, g_BondMoveAnimationSetup[i].loopframe, 0.0f);
-                modelSetAnimEndFrame(&g_CurrentPlayer->model, g_BondMoveAnimationSetup[i].endframe);
-                modelSetAnimFlipFunction(&g_CurrentPlayer->model, bheadFlipAnimation);
+                modelSetAnimLooping(GAITMODEL(g_CurrentPlayer), g_BondMoveAnimationSetup[i].loopframe, 0.0f);
+                modelSetAnimEndFrame(GAITMODEL(g_CurrentPlayer), g_BondMoveAnimationSetup[i].endframe);
+                modelSetAnimFlipFunction(GAITMODEL(g_CurrentPlayer), bheadFlipAnimation);
                 g_CurrentPlayer->headanim = i;
             }
 
             speed /= g_BondMoveAnimationSetup[i].speedMultiplier;
 
-            modelSetAnimSpeed(&g_CurrentPlayer->model, speed * 0.5f, 0.0f);
+            modelSetAnimSpeed(GAITMODEL(g_CurrentPlayer), speed * 0.5f, 0.0f);
             return;
         }
     }
@@ -524,7 +524,7 @@ void bheadAdjustAnimation(f32 speed)
  */
 void bheadStartDeathAnimation(struct ModelAnimation *animnum, s32 flip, f32 fstarttime, f32 speed)
 {
-    modelSetAnimation(&g_CurrentPlayer->model, animnum, flip, fstarttime, speed * 0.5f, 12.0f);
+    modelSetAnimation(GAITMODEL(g_CurrentPlayer), animnum, flip, fstarttime, speed * 0.5f, 12.0f);
     g_CurrentPlayer->headanim = -1;
 }
 
@@ -536,7 +536,7 @@ void bheadStartDeathAnimation(struct ModelAnimation *animnum, s32 flip, f32 fsta
  */
 void bheadSetSpeed(f32 speed)
 {
-    modelSetAnimSpeed(&g_CurrentPlayer->model, speed * 0.5f, 0.0f);
+    modelSetAnimSpeed(GAITMODEL(g_CurrentPlayer), speed * 0.5f, 0.0f);
 }
 
 
@@ -550,7 +550,7 @@ f32 bheadGetBreathingValue(void)
 	if (g_CurrentPlayer->headanim >= 0) {
         // bondviewGetBondBreathing() * (1/80) + (1/240)
 		f32 baseBreathing = bondviewGetBondBreathing() * 0.012500001f + 0.004166667f;
-		f32 animSpeed = modelGetAbsAnimSpeed(&g_CurrentPlayer->model);
+		f32 animSpeed = modelGetAbsAnimSpeed(GAITMODEL(g_CurrentPlayer));
 
 		if (animSpeed > 0) {
 			f32 calculatedBreathing = animSpeed / (g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].endframe - g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].loopframe);

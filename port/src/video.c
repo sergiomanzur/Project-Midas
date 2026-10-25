@@ -4948,6 +4948,16 @@ void videoSubmitCommands(Gfx *cmds)
         }
         s_FrameNum++;
 
+        { /* PORT bring-up: first words of every 120th submitted list. */
+            static unsigned dlp;
+            if ((dlp++ % 120u) == 0u)
+            {
+                u32 *w = (u32 *) cmds;
+                portConLogf("ge: submit cmds=%p w=%08x %08x %08x %08x %08x %08x\n",
+                        (void *) cmds, w[0], w[1], w[2], w[3], w[4], w[5]);
+            }
+        }
+
         { /* bring-up probe (GE_DUMP_BOND): which presentation regime */
             static int dump = -1;
             static unsigned n;

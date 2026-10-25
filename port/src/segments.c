@@ -163,8 +163,10 @@ __asm__(
     "    .text\n"
 );
 
-u8 _animation_dataSegmentRomStart[0xE7E0];
-u8 _animation_entriesSegmentRomStart[0x169EC0];
+/* Low-arena animation segment images (animdata.c allocates and fills them;
+ * see port/include/port_animseg.h for why they may not live in .bss). */
+u8 *port_animation_dataSegmentRomStart;
+u8 *port_animation_entriesSegmentRomStart;
 
 /* ---- fonts (textrelated.c load_font_tables, lv.c lvInit) --------------- */
 /**
@@ -642,6 +644,71 @@ static void portRomdataSegProbe(const char *name, const u8 *old, const u8 *rom, 
     portConLogf("ge: romdata: seg %-18s -> ROM (%u bytes)\n", name, size);
 }
 
+#ifdef PORT_LP64
+/* Sizes of the audio segments, for the 64-bit bank converter (bank64.c). */
+u32 port_sfxctlSize, port_sfxtblSize, port_instrumentsctlSize, port_instrumentstblSize, port_musicsampletblSize;
+
+/**
+ * The audio microcode takes 32-bit addresses, and the ROM image lives above
+ * 4 GB on a 64-bit host, so the sample tables (which the mixer reads by
+ * address) are copied into the low arena. Each ctl/tbl pair keeps its
+ * adjacency (music.c sizes a ctl image as tbl - ctl).
+ */
+static void portAudioRelocate(void)
+{
+    extern void *portAllocHigh(u32 size);
+    static const struct {
+        const char *ctlName, *tblName;
+        u8 **ctl, **tbl;
+        u32 *ctlSize, *tblSize;
+    } pairs[] = {
+        { "sfxctl", "sfxtbl", &port_sfxctlSegmentRomStart, &port_sfxtblSegmentRomStart, &port_sfxctlSize, &port_sfxtblSize },
+        { "instrumentsctl", "instrumentstbl", &port_instrumentsctlSegmentRomStart, &port_instrumentstblSegmentRomStart,
+          &port_instrumentsctlSize, &port_instrumentstblSize },
+    };
+    size_t i;
+    u32 size = 0;
+    const u8 *p;
+
+    for (i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        u32 cs = 0, ts = 0;
+        const u8 *c = romdataSeg(pairs[i].ctlName, &cs);
+        const u8 *t = romdataSeg(pairs[i].tblName, &ts);
+        u8 *blk;
+
+        if (c == NULL || t == NULL || cs == 0 || ts == 0) {
+            continue;
+        }
+        blk = (u8 *) portAllocHigh(cs + ts);
+        if (blk == NULL) {
+            portConLogf("ge: audio: no low memory for %s/%s (%u bytes) - sound stays muted\n", pairs[i].ctlName, pairs[i].tblName, cs + ts);
+            continue;
+        }
+        memcpy(blk, c, cs);
+        memcpy(blk + cs, t, ts);
+        *pairs[i].ctl = blk;
+        *pairs[i].tbl = blk + cs;
+        *pairs[i].ctlSize = cs;
+        *pairs[i].tblSize = ts;
+    }
+
+    p = romdataSeg("musicsampletbl", &size);
+    if (p != NULL && size != 0) {
+        u8 *blk = (u8 *) portAllocHigh(size);
+
+        if (blk != NULL) {
+            memcpy(blk, p, size);
+            port_musicsampletblSegmentRomStart = blk;
+            port_musicsampletblSize = size;
+        } else {
+            portConLogf("ge: audio: no low memory for the music table - sound stays muted\n");
+        }
+    }
+    portConLogf("ge: audio: sample tables relocated below 4 GB (sfx %u+%u, instruments %u+%u, music %u)\n",
+                port_sfxctlSize, port_sfxtblSize, port_instrumentsctlSize, port_instrumentstblSize, port_musicsampletblSize);
+}
+#endif
+
 void portRomdataSegsApply(void)
 {
     static const struct {
@@ -690,6 +757,9 @@ void portRomdataSegsApply(void)
         portRomdataSegProbe(ramrom[i], (const u8 *) portRamromFdata((s32) i), p, size);
         portRamromRebase((s32) i, (void *) p);
     }
+#ifdef PORT_LP64
+    portAudioRelocate();
+#endif
     portConLogf("ge: romdata: Phase B consumers on the ROM: images, music (5 segments), ramrom (14), gunbarrel%s\n",
             missing ? " - SOME MISSING, see above" : "");
 }

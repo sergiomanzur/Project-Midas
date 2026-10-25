@@ -81,8 +81,8 @@ u32 decompressdata(u8 *src, u8 *dst, struct huft *huffman_table)
 }
 
 
-s32 rzipGetSomething(void) {
-    return (rz_inbuf + rz_inptr);
+uintptr_t rzipGetSomething(void) {
+    return (uintptr_t) (rz_inbuf + rz_inptr);
 }
 
 

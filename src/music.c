@@ -77,7 +77,12 @@ static void portCSPWaitStopped(void *player)
  * including the reverb delay line, and alHeapAlloc has no bounds check, so
  * running out silently corrupts memory. 4x the N64 budget gives generous
  * headroom. */
+#ifdef PORT_LP64
+/* the synth graph is pointer-heavy: roughly twice the 32-bit footprint */
+#define MUSIC_ALLOCATION_BYTES   (8 * 0x2E000)
+#else
 #define MUSIC_ALLOCATION_BYTES   (4 * 0x2E000)
+#endif
 #endif
 #define MUSIC_MEMP_BANK                6
 
@@ -153,6 +158,10 @@ static s32 portMusicPoolScale(void)
 
 #define MUSIC_CONFIG_USE_SFX_BANK         1
 #define MUSIC_CONFIG_USE_INSTRUMENT_BANK  1
+
+/* On a 64-bit host the bank images and the Rare sequence table are converted
+ * into host structs (port/src/bank64.c) instead of being patched in place. */
+#define GE_MUSIC_HAVE_32BIT_BANKS 1
 
 // TODO: what is this?
 // This is only used when playing a file (loading from ROM),
@@ -719,6 +728,38 @@ void musicSeqFileNew(RareALSeqBankFile *file, u8 *base)
     }
 }
 
+/* Empty host-format banks: the players need a bank with one instrument (__initFromBank,
+ * __setInstChanState). Used when the real banks cannot be loaded: playback stays muted. */
+static void musicSetDummyBanks(void)
+{
+        static ALBank s_dummyBank;
+        static ALInstrument s_dummyInst;
+        static ALSound s_dummySound;
+        static ALEnvelope s_dummyEnv;
+        static ALKeyMap s_dummyKey;
+        static ALWaveTable s_dummyWave;
+        static ALInstrument *s_dummyInstArray[1];
+        static ALSound *s_dummySoundArray[1];
+
+        s_dummyInstArray[0] = &s_dummyInst;
+        s_dummySoundArray[0] = &s_dummySound;
+        s_dummyInst.soundArray[0] = &s_dummySound;
+        s_dummyInst.soundCount = 1;
+        s_dummyInst.volume = AL_VOL_FULL;
+        s_dummySound.envelope = &s_dummyEnv;
+        s_dummySound.keyMap = &s_dummyKey;
+        s_dummySound.wavetable = &s_dummyWave;
+        s_dummySound.samplePan = AL_PAN_CENTER;
+        s_dummyBank.instCount = 1;
+        s_dummyBank.sampleRate = 22050;
+        s_dummyBank.instArray[0] = &s_dummyInst;
+        (void) s_dummyInstArray;
+        (void) s_dummySoundArray;
+
+        g_musicSfxBufferPtr = &s_dummyBank;
+        g_musicInstrumentBufferPtr = &s_dummyBank;
+}
+
 /**
  * 7630	70006A30
  *     loads sound and music banks into memory segment 6
@@ -758,9 +799,18 @@ void musicSeqPlayerInit(void)
      * (mempAllocBytesInBank hung at boot) - use a static arena instead;
      * the music heap is allocated exactly once and never freed */
     {
+#ifdef PORT_LP64
+        /* the audio microcode addresses buffers with 32-bit values (aLoadBuffer,
+         * aSaveBuffer, the ADPCM/resample/envmix state): the heap must sit
+         * below 4 GB, which .bss does not on a 64-bit host */
+        extern void *portAllocHigh(u32 size);
+
+        p = (u8 *) portAllocHigh(MUSIC_ALLOCATION_BYTES);
+#else
         static u8 portMusicArena[MUSIC_ALLOCATION_BYTES];
 
         p = portMusicArena;
+#endif
     }
 #endif
 
@@ -772,6 +822,26 @@ void musicSeqPlayerInit(void)
 
     alHeapInit(&g_musicHeap, mempAddress, MUSIC_ALLOCATION_BYTES);
 
+#ifdef PORT_LP64
+    {
+        extern u8 *port_sfxctlSegmentRomStart, *port_sfxtblSegmentRomStart;
+        extern u8 *port_instrumentsctlSegmentRomStart, *port_instrumentstblSegmentRomStart;
+        extern u32 port_sfxctlSize, port_sfxtblSize, port_instrumentsctlSize, port_instrumentstblSize;
+        extern ALBank *portBank64Load(const u8 *ctl, u32 ctlSize, u8 *tbl, u32 tblSize, const char *name);
+
+        g_musicSfxBufferPtr = (struct ALBankAlt_s *) portBank64Load(port_sfxctlSegmentRomStart, port_sfxctlSize,
+                                                                    port_sfxtblSegmentRomStart, port_sfxtblSize, "sfx");
+        g_musicInstrumentBufferPtr = portBank64Load(port_instrumentsctlSegmentRomStart, port_instrumentsctlSize,
+                                                    port_instrumentstblSegmentRomStart, port_instrumentstblSize, "instruments");
+        (void) sfxBank;
+        (void) instrumentBank;
+        if (g_musicSfxBufferPtr == NULL || g_musicInstrumentBufferPtr == NULL)
+        {
+            musicSetDummyBanks();
+            g_sndBootswitchSound = 1; /* no usable banks: stay muted instead of crashing */
+        }
+    }
+#elif GE_MUSIC_HAVE_32BIT_BANKS
     if (MUSIC_CONFIG_USE_SFX_BANK)
     {
         size = (u32)&_sfxtblSegmentRomStart - (u32)&_sfxctlSegmentRomStart;
@@ -791,9 +861,33 @@ void musicSeqPlayerInit(void)
         alBnkfNew(instrumentBank, (u8 *)&_instrumentstblSegmentRomStart);
         g_musicInstrumentBufferPtr = instrumentBank->bankArray[0];
     }
+#else
+    (void) sfxBank;
+    (void) instrumentBank;
+    musicSetDummyBanks();
+#endif /* GE_MUSIC_HAVE_32BIT_BANKS */
 
     // this area based on auReadSeqFileHeader
 
+#ifdef PORT_LP64
+    {
+        extern u8 *port_musicsampletblSegmentRomStart;
+        extern u32 port_musicsampletblSize;
+        extern RareALSeqBankFile *portSeqTable64(const u8 *sbk, u32 sbkSize, u8 *base);
+
+        g_musicDataTable = portSeqTable64(port_musicsampletblSegmentRomStart, port_musicsampletblSize,
+                                          port_musicsampletblSegmentRomStart);
+        if (g_musicDataTable == NULL)
+        {
+            /* no usable sequence table: a zeroed one so the length loop below is harmless */
+            g_musicDataTable = alHeapAlloc(&g_musicHeap, 1, sizeof(RareALSeqBankFile) + NUM_MUSIC_TRACKS * sizeof(RareALSeqData));
+            g_musicDataTable->seqCount = NUM_MUSIC_TRACKS;
+            g_sndBootswitchSound = 1;
+        }
+        (void) tblSegmentSize;
+        (void) tblSegmentRomStartAddress;
+    }
+#elif GE_MUSIC_HAVE_32BIT_BANKS
     // is this sizeof(RareALSeqBankFile) ? which implies the struct isn't right...
     size = 0x10;
     g_musicDataTable = alHeapAlloc(&g_musicHeap, 1, size);
@@ -831,7 +925,11 @@ void musicSeqPlayerInit(void)
     // end auReadSeqFileHeader
 
     musicSeqFileNew(g_musicDataTable, (u8*)&_musicsampletblSegmentRomStart);
-    
+#else
+    (void) tblSegmentSize;
+    (void) tblSegmentRomStartAddress;
+#endif /* GE_MUSIC_HAVE_32BIT_BANKS */
+
     size = TRACK_1_DATA_SEQ_SIZE_BYTES;
     g_musicXTrack1SeqData = alHeapAlloc(&g_musicHeap, 1, size);
 
@@ -843,6 +941,7 @@ void musicSeqPlayerInit(void)
     // This 'for' loops seems to load track offsets, and lengths one time at init.
     // devkit example does this on demand.
     // see auSeqPlayerSetFile in n64devkit\ultra\usr\src\pr\demos_old\nnsample1\audio.c
+#if GE_MUSIC_HAVE_32BIT_BANKS
     for (ui = 0; ui < NUM_MUSIC_TRACKS; ui++)
     {
         g_musicTrackLength[ui] = g_musicDataTable->seqArray[ui].uncompressed_len;
@@ -854,6 +953,9 @@ void musicSeqPlayerInit(void)
             g_musicTrackLength[ui]++;
         }
     }
+#else
+    (void) ui;
+#endif
 
     synconfig.maxVVoices = 0;
     synconfig.maxPVoices = MUSIC_SYN_CONFIG_MAX_P_VOICES * MUSIC_POOL_SCALE;
@@ -926,6 +1028,7 @@ void musicSeqPlayerInit(void)
     }
 #endif
     amStartAudioThread();
+
 }
 
 /**

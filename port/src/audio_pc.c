@@ -838,15 +838,43 @@ static void portAudioInit(void)
  */
 void portAudioPump(void)
 {
+    /* arm64 bring-up: sound-bootswitch builds have an empty bank and no
+     * valid ACMD addresses; do not run the audio microcode at all. */
+    {
+        extern s8 g_sndBootswitchSound;
+        if (g_sndBootswitchSound) {
+            return;
+        }
+    }
+
     /* audi.c's RSP budget is MAX_ACMD_SIZE = 3000 Acmds per frame; a
      * music-dense frame really emits >1024 (the undersized first cut
      * overflowed into frameBuf - the stable float-bits-as-pointer
      * crashes). Margin on top of the N64 budget, x4 for the GE_SNDSCALE
      * pools (music.c: up to 4x the voices -> up to 4x the per-frame Acmds). */
     static Acmd cmdList[3072 * 4];
+#ifdef PORT_LP64
+    /* aSaveBuffer takes the output address as a 32-bit value, so the frame buffer must be
+     * below 4 GB (.bss is not on a 64-bit host) */
+    static s16 *frameBuf;
+#else
     static s16 frameBuf[PORT_MAX_FRAME_SAMPLES * 2];
+#endif
     static s32 s_InPump;
     s32 guard;
+
+#ifdef PORT_LP64
+    if (frameBuf == NULL) {
+        extern void *portAllocHigh(u32 size);
+
+        frameBuf = (s16 *) portAllocHigh((u32) (sizeof(s16) * PORT_MAX_FRAME_SAMPLES * 2));
+        if (frameBuf == NULL) {
+            s_AudioDead = 1;
+            return;
+        }
+        memset(frameBuf, 0, sizeof(s16) * PORT_MAX_FRAME_SAMPLES * 2);
+    }
+#endif
 
 #ifdef __ANDROID__
     portAndroidAudioPumpEvents();

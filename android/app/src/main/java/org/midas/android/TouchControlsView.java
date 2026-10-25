@@ -271,7 +271,12 @@ public final class TouchControlsView extends View {
         }
         mDensity = getResources().getDisplayMetrics().density;
 
-        final float margin = dp(16f);
+        /* Layout: everything hugs the edges so the centre of the screen stays
+         * clear for the game. Left thumb owns MOVE plus the d-pad above it,
+         * right thumb owns LOOK plus the face cluster above it, shoulders sit in
+         * the top corners, START/BACK are small and horizontal at top centre and
+         * the overlay toggle is tucked under RT. */
+        final float margin = dp(10f);
         final float safeL = mInsetLeft + margin;
         final float safeT = mInsetTop + margin;
         final float safeR = w - mInsetRight - margin;
@@ -281,23 +286,23 @@ public final class TouchControlsView extends View {
         final float base = Math.min(safeW, safeH);
         final float centreX = (safeL + safeR) * 0.5f;
 
-        mGap = Math.max(dp(6f), Math.min(dp(14f), base * 0.035f));
-        mStickRadius = clamp(base * 0.135f, dp(58f), dp(112f));
-        mFaceRadius = clamp(base * 0.057f, dp(21f), dp(35f));
-        mToggleSize = dp(46f);
-        mPillHeight = clamp(base * 0.105f, dp(32f), dp(44f));
-        mPillWidth = clamp(mPillHeight * 1.8f, dp(54f), dp(88f));
+        mGap = Math.max(dp(6f), Math.min(dp(12f), base * 0.03f));
+        mStickRadius = clamp(base * 0.115f, dp(50f), dp(92f));
+        mFaceRadius = clamp(base * 0.048f, dp(19f), dp(30f));
+        mToggleSize = dp(38f);
+        mPillHeight = clamp(base * 0.088f, dp(29f), dp(40f));
+        mPillWidth = clamp(mPillHeight * 1.7f, dp(50f), dp(76f));
 
-        mStickBaseX[0] = safeL + mStickRadius;
-        mStickBaseY[0] = safeB - mStickRadius;
-        mStickBaseX[1] = safeR - mStickRadius;
-        mStickBaseY[1] = safeB - mStickRadius;
+        mStickBaseX[0] = safeL + mStickRadius + dp(2f);
+        mStickBaseY[0] = safeB - mStickRadius - dp(2f);
+        mStickBaseX[1] = safeR - mStickRadius - dp(2f);
+        mStickBaseY[1] = safeB - mStickRadius - dp(2f);
         mStickKnobX[0] = mStickBaseX[0];
         mStickKnobY[0] = mStickBaseY[0];
         mStickKnobX[1] = mStickBaseX[1];
         mStickKnobY[1] = mStickBaseY[1];
 
-        // Shoulders/triggers hug the top corners.
+        /* Shoulders in the top corners, tight pairs. */
         setRect(AndroidInput.BUTTON_LB, safeL, safeT, mPillWidth, mPillHeight);
         mTriggerRect[0].set(safeL + mPillWidth + mGap, safeT,
                 safeL + mPillWidth * 2f + mGap, safeT + mPillHeight);
@@ -305,44 +310,45 @@ public final class TouchControlsView extends View {
         mTriggerRect[1].set(safeR - mPillWidth * 2f - mGap, safeT,
                 safeR - mPillWidth, safeT + mPillHeight);
 
-        // PAD handle is always at top centre; Start/Back sit just below it.
-        final boolean compact = safeW < dp(430f);
-        final float toggleY = compact ? safeT + mPillHeight + mGap : safeT;
-        mToggle.set(centreX - mToggleSize * 0.5f, toggleY,
-                centreX + mToggleSize * 0.5f, toggleY + mToggleSize);
-        final float secondRowY = toggleY + mToggleSize + mGap;
-        final float startW = Math.max(dp(58f), mPillWidth * 0.9f);
+        /* START/BACK: one small pair centred on the top edge. */
+        final float startW = Math.max(dp(52f), mPillWidth * 0.85f);
         setRect(AndroidInput.BUTTON_BACK,
-                centreX - mGap * 0.5f - startW, secondRowY, startW, mPillHeight);
+                centreX - mGap * 0.5f - startW, safeT + dp(2f), startW, mPillHeight);
         setRect(AndroidInput.BUTTON_START,
-                centreX + mGap * 0.5f, secondRowY, startW, mPillHeight);
+                centreX + mGap * 0.5f, safeT + dp(2f), startW, mPillHeight);
 
-        // D-pad above the left stick; face cluster above the right stick.
+        /* Overlay toggle: out of the play area, under the right shoulder pair. */
+        mToggle.set(safeR - mToggleSize, safeT + mPillHeight + mGap,
+                safeR, safeT + mPillHeight + mGap + mToggleSize);
+
+        /* D-pad: left edge, above the MOVE stick. Face cluster: right edge,
+         * above the LOOK stick. The arm is more than two radii so the round
+         * buttons never overlap each other, and both clusters keep clear of the
+         * centre. */
         final float dHalf = mFaceRadius;
-        final float clusterY = Math.max(secondRowY + mPillHeight + mGap * 2f,
-                mStickBaseY[0] - mStickRadius - dHalf - mGap * 2f);
-        final float arm = mFaceRadius * 1.28f;
-        setCircle(AndroidInput.BUTTON_DPAD_UP, mStickBaseX[0], clusterY - arm, dHalf);
-        setCircle(AndroidInput.BUTTON_DPAD_DOWN, mStickBaseX[0], clusterY + arm, dHalf);
-        setCircle(AndroidInput.BUTTON_DPAD_LEFT, mStickBaseX[0] - arm, clusterY, dHalf);
-        setCircle(AndroidInput.BUTTON_DPAD_RIGHT, mStickBaseX[0] + arm, clusterY, dHalf);
+        final float arm = mFaceRadius * 2.15f;
+        final float dpadCx = safeL + arm + mFaceRadius;
+        final float dpadCy = mStickBaseY[0] - mStickRadius - mGap * 2f - arm * 1.25f;
+        setCircle(AndroidInput.BUTTON_DPAD_UP, dpadCx, dpadCy - arm, dHalf);
+        setCircle(AndroidInput.BUTTON_DPAD_DOWN, dpadCx, dpadCy + arm, dHalf);
+        setCircle(AndroidInput.BUTTON_DPAD_LEFT, dpadCx - arm, dpadCy, dHalf);
+        setCircle(AndroidInput.BUTTON_DPAD_RIGHT, dpadCx + arm, dpadCy, dHalf);
 
-        setCircle(AndroidInput.BUTTON_Y, mStickBaseX[1], clusterY - arm, mFaceRadius);
-        setCircle(AndroidInput.BUTTON_A, mStickBaseX[1], clusterY + arm, mFaceRadius);
-        setCircle(AndroidInput.BUTTON_X, mStickBaseX[1] - arm, clusterY, mFaceRadius);
-        setCircle(AndroidInput.BUTTON_B, mStickBaseX[1] + arm, clusterY, mFaceRadius);
+        final float faceCx = safeR - arm - mFaceRadius;
+        final float faceCy = mStickBaseY[1] - mStickRadius - mGap * 2f - arm * 1.25f;
+        setCircle(AndroidInput.BUTTON_Y, faceCx, faceCy - arm, mFaceRadius);
+        setCircle(AndroidInput.BUTTON_A, faceCx, faceCy + arm, mFaceRadius);
+        setCircle(AndroidInput.BUTTON_X, faceCx - arm, faceCy, mFaceRadius);
+        setCircle(AndroidInput.BUTTON_B, faceCx + arm, faceCy, mFaceRadius);
 
-        // Stick clicks between the sticks, clear of both thumb zones.
-        final float side = mStickRadius + dp(24f);
-        float l3x = mStickBaseX[0] + side;
-        float r3x = mStickBaseX[1] - side;
-        final float minGap = dp(42f);
-        if (r3x - l3x < minGap) {
-            l3x = centreX - minGap * 0.5f;
-            r3x = centreX + minGap * 0.5f;
-        }
-        setCircle(AndroidInput.BUTTON_L3, l3x, mStickBaseY[0] - dp(6f), dp(17f));
-        setCircle(AndroidInput.BUTTON_R3, r3x, mStickBaseY[1] - dp(6f), dp(17f));
+        /* Stick clicks: small discs beside each stick, outside its ring. */
+        final float clickR = dp(14f);
+        setCircle(AndroidInput.BUTTON_L3,
+                mStickBaseX[0] + mStickRadius + clickR + dp(4f),
+                mStickBaseY[0] - mStickRadius * 0.35f, clickR);
+        setCircle(AndroidInput.BUTTON_R3,
+                mStickBaseX[1] - mStickRadius - clickR - dp(4f),
+                mStickBaseY[1] - mStickRadius * 0.35f, clickR);
     }
 
     private float clamp(float v, float lo, float hi) {
@@ -736,3 +742,4 @@ public final class TouchControlsView extends View {
                 mToggle.centerX(), mToggle.centerY() + mToggle.height() * 0.12f, mText);
     }
 }
+

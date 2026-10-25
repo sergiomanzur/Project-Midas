@@ -288,6 +288,11 @@ typedef struct WatchContButtonPositions {
     f32 words[55]; /* 0xdc bytes */
 } WatchContButtonPositions;
 
+#ifdef PORT_LP64
+Gfx *watchRenderController(Gfx *gdl, Mtxf *basemtx, s32 envcolour, bool animatebuttons, WatchContButtonPositions *buttonpositions, s8 *contpadnum);
+Gfx *watchRenderControllerOpaque(Gfx *gdl, Mtxf *basemtx, bool animatebuttons, WatchContButtonPositions *buttonpositions, s8 *contpadnum);
+#endif
+
 //D:80040B68
 // 3D positions for the buttons at the sides of the screen for the 1x control styles.
 WatchContButtonPositions g_1ContButtonPositions[] = {{
@@ -3619,9 +3624,9 @@ Gfx *draw_background_health_and_armor(Gfx *gdl, Mtx *arg1, s32 zoom_squish)
     {
         gSPClearGeometryMode(gdl++, G_CULL_BOTH);
         // draw body armor bars
-        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(&g_CurrentPlayer->watch_body_armor_bar_gdl));
+        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(ARMOR_GAUGE_DL(g_CurrentPlayer)));
         // draw health bars
-        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(&g_CurrentPlayer->watch_health_bar_gdl));
+        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(HEALTH_GAUGE_DL(g_CurrentPlayer)));
     }
 
     /**
@@ -3635,9 +3640,9 @@ Gfx *draw_background_health_and_armor(Gfx *gdl, Mtx *arg1, s32 zoom_squish)
     {
         gSPClearGeometryMode(gdl++, G_CULL_BOTH);
         // draw body armor bars
-        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(&g_CurrentPlayer->watch_body_armor_bar_gdl));
+        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(ARMOR_GAUGE_DL(g_CurrentPlayer)));
         // draw health bars
-        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(&g_CurrentPlayer->watch_health_bar_gdl));
+        gSPDisplayList(gdl++, OS_PHYSICAL_TO_K0(HEALTH_GAUGE_DL(g_CurrentPlayer)));
     }
     /**
      * End health bar zoom section

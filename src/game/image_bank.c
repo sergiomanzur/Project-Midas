@@ -90,8 +90,8 @@ struct sImageTableEntry *mpstageselimages;
 extern u8* _GlobalimagetableSegmentRomStart;
 
 
-void texSetBitstring(s32 pos) {
-    img_curpos = pos;
+void texSetBitstring(uintptr_t pos) {
+    img_curpos = (u8 *) pos;
     img_curdatatable = 0;
     img_bitcount = 0;
 }
@@ -213,9 +213,9 @@ void texReset(void)
     }
 #endif
 
-    size = (u32)&_GlobalimagetableSegmentEnd - (u32)&_GlobalimagetableSegmentStart;
+    size = (u32) ((uintptr_t) &_GlobalimagetableSegmentEnd - (uintptr_t) &_GlobalimagetableSegmentStart);
     pGlobalimagetable = mempAllocBytesInBank(size + 0x1000, MEMPOOL_STAGE);
-    pGlobalimagetable = ((u32)pGlobalimagetable + 0xFFFU) & 0xFFFFF000;
+    pGlobalimagetable = (s32 *) (((uintptr_t) pGlobalimagetable + 0xFFFu) & ~(uintptr_t) 0xFFFu);
 
     romCopy(pGlobalimagetable, &_GlobalimagetableSegmentRomStart, size);
 
@@ -223,59 +223,62 @@ void texReset(void)
     globalbank_rdram_offset = (u32)pGlobalimagetable + 0xFE000000;
 #else
     /* PORT: oddtextures.c is compiled in, so &s_*image and &globalDL_* below
-     * are already real addresses -- no segment rebase. */
+     * are already real addresses -- no segment rebase. Keep them pointer-width:
+     * a (u32) cast truncates on a 64-bit host and the dereference dies. */
     globalbank_rdram_offset = 0;
 #endif
-    genericimage = (void *) (globalbank_rdram_offset + (u32)&s_genericimage);
-    impactimages = (void *) (globalbank_rdram_offset + (u32)&s_impactimages);
-    explosion_smokeimages = (void *) (globalbank_rdram_offset + (u32)&s_explosion_smokeimages);
-    scattered_explosions = (void *) (globalbank_rdram_offset + (u32)&s_scattered_explosions);
-    flareimage1 = (void *) (globalbank_rdram_offset + (u32)&s_flareimage1);
-    flareimage2 = (void *) (globalbank_rdram_offset + (u32)&s_flareimage2);
-    flareimage3 = (void *) (globalbank_rdram_offset + (u32)&s_flareimage3);
-    flareimage4 = (void *) (globalbank_rdram_offset + (u32)&s_flareimage4);
-    flareimage5 = (void *) (globalbank_rdram_offset + (u32)&s_flareimage5);
-    ammo9mmimage = (void *) (globalbank_rdram_offset + (u32)&s_ammo9mmimage);
-    rifleammoimage = (void *) (globalbank_rdram_offset + (u32)&s_rifleammoimage);
-    shotgunammoimage = (void *) (globalbank_rdram_offset + (u32)&s_shotgunammoimage);
-    knifeammoimage = (void *) (globalbank_rdram_offset + (u32)&s_knifeammoimage);
-    glaunchammoimage = (void *) (globalbank_rdram_offset + (u32)&s_glammoimage);
-    rocketammoimage = (void *) (globalbank_rdram_offset + (u32)&s_rocketammoimage);
-    genericmineammoimage = (void *) (globalbank_rdram_offset + (u32)&s_genericmineammoimage);
-    grenadeammoimage = (void *) (globalbank_rdram_offset + (u32)&s_grenadeammoimage);
-    magnumammoimage = (void *) (globalbank_rdram_offset + (u32)&s_magnumammoimage);
-    goldengunammoimage = (void *) (globalbank_rdram_offset + (u32)&s_goldengunammoimage);
-    remotemineammoimage = (void *) (globalbank_rdram_offset + (u32)&s_remotemineammoimage);
-    timedmineammoimage = (void *) (globalbank_rdram_offset + (u32)&s_timedmineammoimage);
-    proxmineammoimage = (void *) (globalbank_rdram_offset + (u32)&s_proxmineammoimage);
-    tankammoimage = (void *) (globalbank_rdram_offset + (u32)&s_tankammoimage);
-    crosshairimage = (void *) (globalbank_rdram_offset + (u32)&s_crosshairimage);
-    betacrosshairimage = (void *) (globalbank_rdram_offset + (u32)&s_betacrosshairimage);
-    glassoverlayimage = (void *) (globalbank_rdram_offset + (u32)&s_glassoverlayimage);
-    monitorimages = (void *) (globalbank_rdram_offset + (u32)&s_monitorimages);
-    skywaterimages = (void *) (globalbank_rdram_offset + (u32)&s_skywaterimages);
-    mainfolderimages = (void *) (globalbank_rdram_offset + (u32)&s_mainfolderimages);
-    mpradarimages = (void *) (globalbank_rdram_offset + (u32)&s_mpradarimages);
-    mpcharselimages = (void *) (globalbank_rdram_offset + (u32)&s_mpcharselimages);
-    mpstageselimages = (void *) (globalbank_rdram_offset + (u32)&s_mpstageselimages);
+#define PORT_IMG_ADDR(sym) ((void *) (uintptr_t) ((uintptr_t) &(sym) + (uintptr_t) globalbank_rdram_offset))
+#define PORT_DL_ADDR(sym)  ((Gfx *) (uintptr_t) ((uintptr_t) &(sym) + (uintptr_t) globalbank_rdram_offset))
+    genericimage = PORT_IMG_ADDR(s_genericimage);
+    impactimages = PORT_IMG_ADDR(s_impactimages);
+    explosion_smokeimages = PORT_IMG_ADDR(s_explosion_smokeimages);
+    scattered_explosions = PORT_IMG_ADDR(s_scattered_explosions);
+    flareimage1 = PORT_IMG_ADDR(s_flareimage1);
+    flareimage2 = PORT_IMG_ADDR(s_flareimage2);
+    flareimage3 = PORT_IMG_ADDR(s_flareimage3);
+    flareimage4 = PORT_IMG_ADDR(s_flareimage4);
+    flareimage5 = PORT_IMG_ADDR(s_flareimage5);
+    ammo9mmimage = PORT_IMG_ADDR(s_ammo9mmimage);
+    rifleammoimage = PORT_IMG_ADDR(s_rifleammoimage);
+    shotgunammoimage = PORT_IMG_ADDR(s_shotgunammoimage);
+    knifeammoimage = PORT_IMG_ADDR(s_knifeammoimage);
+    glaunchammoimage = PORT_IMG_ADDR(s_glammoimage);
+    rocketammoimage = PORT_IMG_ADDR(s_rocketammoimage);
+    genericmineammoimage = PORT_IMG_ADDR(s_genericmineammoimage);
+    grenadeammoimage = PORT_IMG_ADDR(s_grenadeammoimage);
+    magnumammoimage = PORT_IMG_ADDR(s_magnumammoimage);
+    goldengunammoimage = PORT_IMG_ADDR(s_goldengunammoimage);
+    remotemineammoimage = PORT_IMG_ADDR(s_remotemineammoimage);
+    timedmineammoimage = PORT_IMG_ADDR(s_timedmineammoimage);
+    proxmineammoimage = PORT_IMG_ADDR(s_proxmineammoimage);
+    tankammoimage = PORT_IMG_ADDR(s_tankammoimage);
+    crosshairimage = PORT_IMG_ADDR(s_crosshairimage);
+    betacrosshairimage = PORT_IMG_ADDR(s_betacrosshairimage);
+    glassoverlayimage = PORT_IMG_ADDR(s_glassoverlayimage);
+    monitorimages = PORT_IMG_ADDR(s_monitorimages);
+    skywaterimages = PORT_IMG_ADDR(s_skywaterimages);
+    mainfolderimages = PORT_IMG_ADDR(s_mainfolderimages);
+    mpradarimages = PORT_IMG_ADDR(s_mpradarimages);
+    mpcharselimages = PORT_IMG_ADDR(s_mpcharselimages);
+    mpstageselimages = PORT_IMG_ADDR(s_mpstageselimages);
 
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x000, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x078, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x120, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x1c8, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x270, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x318, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x3c0, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x468, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x510, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x5b8, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x660, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x708, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x7b0, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x858, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x900, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0x9a8, 0);
-    texLoadFromDisplayList(globalbank_rdram_offset + (u32)&globalDL_0xa50, 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x000), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x078), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x120), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x1c8), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x270), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x318), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x3c0), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x468), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x510), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x5b8), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x660), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x708), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x7b0), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x858), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x900), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0x9a8), 0);
+    texLoadFromDisplayList(PORT_DL_ADDR(globalDL_0xa50), 0);
 
     texLoad(genericimage, 0);
 

@@ -1,4 +1,4 @@
-#ifndef _MODEL_H_
+﻿#ifndef _MODEL_H_
 #define _MODEL_H_
 
 #include <ultra64.h>
@@ -18,7 +18,7 @@ void modelAttachHead(Model *, ModelNode*,  ModelFileHeader *);
 void clear_aircraft_model_obj(Model *objinstance);
 void modelSetDistanceDisabled(s32 param_1);
 void modelSetDistanceScale(f32 param_1);
-void set_vtxallocator(s32 param_1);
+void set_vtxallocator(struct Vertex *(*param_1)(s32));
 void modelCalculateScaledRootToOriginDir(Model* model, coord3d* coord);
 void modelGetScaledRootToOriginDir(Model* model, coord3d* coord);
 s32 modelFindNodeMtxIndex(ModelNode *node, s32 arg1);
@@ -76,7 +76,7 @@ void modelSetAnimFlipFunction(Model *model, void *callback);
 void modelSetAnimSpeed(Model *model, f32 anim_speed, f32 startframe);
 void sub_GAME_7F06FE90(Model *model, f32 arg1, f32 arg2);
 void modelSetAnimPlaySpeed(Model *model, f32 animation_rate, f32 startframe);
-void sub_GAME_7F06FF5C(Model *model, s32 arg1);
+void sub_GAME_7F06FF5C(Model *model, void *callback);
 void modelSetAnimFrame(Model* model, f32 frame);
 void modelSetAnimFrame2(Model* model, f32 frame1, f32 frame2);
 void modelSetAnimMergingEnabled(s32 arg0);
@@ -127,4 +127,5 @@ void return_null(void);
 #endif
 
 #endif
+
 

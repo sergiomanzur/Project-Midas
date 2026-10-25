@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Notes:
  * Hacky structures allows coords/rgb etc to be accessed using
  * coord->x, coord->y and coord->z, but also as
@@ -599,10 +599,15 @@ typedef union
         u16 unk04; // number of frames in the animation
         u8 unk06;
         u8 unk07; // bit 0 is a loop flag: 0 means freeze anim at end, 1 means loop anim
-        ModelAnimBitField *bitDescriptors; // 0x08
+        /* PORT: 32-bit host addresses, not pointers. The animation segment is
+         * 32-bit on the wire and expand_ani_table_entries writes
+         * base+offset into these fields; a pointer field would be 8 bytes on
+         * 64-bit and shift unk0C/unk0E/unk10 into the pointer. The segment
+         * lives in the low arena, so the 32-bit value is a valid address. */
+        u32 bitDescriptors; // 0x08
         u16 unk0C;
         u16 unk0E;
-        u8  *bitStream; // 0x10
+        u32 bitStream; // 0x10
         s32 unk14;
         s32 unk18;
         s32 unk1c;
@@ -707,10 +712,20 @@ typedef union
                 s16 t; /* 0xa */
             };
 
+#ifdef PORT_LP64
+            /* PORT: a Vertex must stay the 16-byte N64 Vtx. With real pointers here it grew to 24
+             * bytes on a 64-bit host, so every vertex array indexed as Vertex[] (vtxstore, the
+             * per-instance vertex copies, the film strip) no longer lined up with the 16-byte
+             * display-list vertices. Collision-only: the wire word, resolved through the
+             * CollisionRelatedNodes side table of ModelRoData_DisplayList_CollisionRecord. */
+            u32 LinkedTo;
+            u32 CollisionRelatedNode; /* 0x8 */
+#else
             struct Vertex *LinkedTo;
 
             /* Collision vertices only: points to related model node. */
             void *CollisionRelatedNode; /* 0x8 */
+#endif
         };
 
         union
@@ -738,6 +753,9 @@ typedef union
             };
         };
     } Vertex;
+#ifdef PORT_LP64
+    typedef char port_vertex_is_16_bytes[(sizeof(Vertex) == 16) ? 1 : -1];
+#endif
 
     #pragma region OpenFlight Records
     /*
@@ -1299,6 +1317,10 @@ typedef union
             s16      ModelType;            /*0x18*/
             u16      RwDataIndex;          /*0x1A*/
             void    *BaseAddr;             /*0x1C*/
+#ifdef PORT_LP64
+            /* host-only: CollisionVertices[i].CollisionRelatedNode as a real node pointer */
+            struct ModelNode **CollisionRelatedNodes;
+#endif
 
         } ModelRoData_DisplayList_CollisionRecord;
 
@@ -1584,10 +1606,10 @@ typedef union
             // 0x90
             f32               animloopframe; /*0x90*/
             f32               animloopmerge; /*0x94*/
-            s32               animflipfunc; /*0x98*/
+            uintptr_t         animflipfunc; /*0x98 PORT: function pointer; s32 truncated it on 64-bit*/
             s32               unk9c;
             // 0xa0
-            s32               unka0; // This is likely a function pointer, see sub_GAME_7F06D490()
+            uintptr_t         unka0; /* PORT: function pointer, was s32 and truncated on 64-bit */
             f32               playspeed; // used by ACT_STAND in chrlv
             f32               animrate;
             f32               unkac;
@@ -4256,7 +4278,10 @@ struct fontchar {
     s32 height;
     s32 width;
     s32 kerningindex;
-    u8 *pixeldata;
+    /* PORT: 32-bit address into the low memp font copy, not a pointer. The
+     * font segment is a 24-byte record on the wire; a pointer field would make
+     * the struct 32 bytes on 64-bit and shift every char. */
+    u32 pixeldata;
 };
 
 struct font {
@@ -4264,4 +4289,9 @@ struct font {
 	struct fontchar chars[94]; // can be 135 in PAL
 };
 
+#ifdef PORT_LP64
+#include "port_lp64_protos.h"
 #endif
+
+#endif
+

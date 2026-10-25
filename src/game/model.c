@@ -15,6 +15,10 @@
 #include "quaternion.h"
 #include "random.h"
 
+#ifndef TARGET_N64
+static int portPtrLooksHosted(const void *p);
+#endif
+
 
 typedef struct ModelGroupMtxBuildArg {
     u16 flags;
@@ -67,7 +71,9 @@ Model *modelmgrInstantiateModel(ModelFileHeader *header)
 
         if (model == NULL)
         {
-            model = mempAllocBytesInBank(0x20, MEMPOOL_STAGE);
+            /* PORT: was 0x20 - far smaller than sizeof(Model) on the host, so
+             * every field write past offset 0x20 smashed the next allocation. */
+            model = mempAllocBytesInBank((u32) sizeof(Model), MEMPOOL_STAGE);
         }
 
         if (header->numRecords > 0)
@@ -94,6 +100,9 @@ Model *modelmgrInstantiateModel(ModelFileHeader *header)
 
     if (model != NULL)
     {
+        portConLogf("ge: inst: hdr=%p nrec=%d rw=%p model=%p lvreset=%d\n",
+                (void *) header, (int) header->numRecords, (void *) rwdata, (void *) model,
+                (int) g_ModelIsLvResetting);
         modelInit(model, header, rwdata);
         ((struct ModelSlot *)model)->unk02 = rwdatalen;
     }
@@ -137,7 +146,9 @@ Model *modelmgrInstantiateModelWithAnim(ModelFileHeader *modelFileHeader)
 
         if (newModel == NULL)
         {
-            newModel = mempAllocBytesInBank(0xc0, MEMPOOL_STAGE);
+            /* sizeof(Model), not the N64 0xc0: Model has more pointer members
+             * on a 64-bit host and animInit writes all of them. */
+            newModel = mempAllocBytesInBank((u32) sizeof(Model), MEMPOOL_STAGE);
         }
 
         requiredRwdatalen = modelFileHeader->numRecords;
@@ -218,7 +229,7 @@ void sub_GAME_7F06C418(Vew4s32 *src, Vew4s32 *dst) {
 }
 
 
-void set_vtxallocator(s32 param_1) {
+void set_vtxallocator(struct Vertex *(*param_1)(s32)) {
   vtxallocator = param_1;
 }
 
@@ -284,6 +295,7 @@ s32 modelFindNodeMtxIndex(ModelNode *node, s32 arg1)
     union ModelRoData *rodata2;
     union ModelRoData *rodata3;
     union ModelRoData *rodata4;
+    ModelNode *orignode = node;
 
     while (node)
     {
@@ -294,7 +306,7 @@ s32 modelFindNodeMtxIndex(ModelNode *node, s32 arg1)
             extern int portPtrLooksBad(const void *);
             extern void portModelAuditReport(const char *, const void *, const void *, const void *);
             if (portPtrLooksBad(node)) {
-                portModelAuditReport("modelFindNodeMtxIndex:node", node, NULL, NULL);
+                portModelAuditReport("modelFindNodeMtxIndex:node", node, orignode, NULL);
                 return -1;
             }
         }
@@ -328,6 +340,16 @@ s32 modelFindNodeMtxIndex(ModelNode *node, s32 arg1)
 
 // PD: model0001a5cc
 Mtxf *modelFindNodeMtx(struct Model *model, struct ModelNode *node, s32 arg2) {
+#ifdef PORT_LP64
+    {
+        extern int portPtrLooksBad(const void *);
+        extern void portModelAuditReport(const char *, const void *, const void *, const void *);
+        if (portPtrLooksBad(node)) {
+            portModelAuditReport("modelFindNodeMtx:model/obj", model, model->obj, node);
+            return NULL;
+        }
+    }
+#endif
     s32 index = modelFindNodeMtxIndex(node, arg2);
 
     if (index >= 0) {
@@ -460,7 +482,10 @@ union ModelRwData* modelGetNodeRwData(Model *Objinst, ModelNode *root)
         }
     }
 
-    return &data[index];
+    /* PORT: RwDataIndex counts 4-byte cells (sizeof(rwdata)/4), so address
+     * the datas buffer in bytes; `data + index` would stride by the host
+     * pointer size (8) and read/write past the record on a 64-bit host. */
+    return (union ModelRwData *) ((u8 *) data + (size_t) index * 4u);
 }
 
 
@@ -925,7 +950,7 @@ u16 modelAnimReadRootMotionValue(ModelAnimation *anim, s32 fieldIndex, s32 extra
     u8 bitsThisRead;
 
     result = 0;
-    desc = anim->bitDescriptors + fieldIndex;
+    desc = (struct ModelAnimBitField *) (uintptr_t) anim->bitDescriptors + fieldIndex;
     bitsRemaining = desc->bitCount;
 
     if (bitsRemaining > 0)
@@ -933,7 +958,7 @@ u16 modelAnimReadRootMotionValue(ModelAnimation *anim, s32 fieldIndex, s32 extra
         totalBitOffset = extraBitOffset + desc->bitOffset;
         byteIndex = totalBitOffset >> 3;
         totalBitOffset &= 7;
-        byteptr = anim->bitStream + byteIndex;
+        byteptr = (u8 *) (uintptr_t) anim->bitStream + byteIndex;
         bitsThisRead = 8 - totalBitOffset;
 
         if (bitsRemaining >= bitsThisRead)
@@ -1087,11 +1112,32 @@ void sub_GAME_7F06D490(Model *model, ModelNode *modelNode)
     sp2c.y = sp38.y;
     sp2c.z = sp38.z;
 
+#ifdef PORT_LP64
+    /* PORT: the callback (sub_GAME_7F01FC10 for chrs) finds the stand tile and the ground height under the
+     * model. It was skipped while unka0 was a 32-bit field, which left guards without a floor. The field
+     * holds a full pointer now; still refuse a value that is clearly not one. */
+    if (model->unka0 != 0)
+    {
+        if (model->unka0 < 0x10000u || (model->unka0 >> 32) == 0xFFFFFFFFu)
+        {
+            static s32 said;
+            if (!said) {
+                said = 1;
+                portConLogf("ge: anim callback %p is not a pointer (model %p, obj %p) - skipped\n",
+                        (void *) model->unka0, (void *) model, (void *) model->obj);
+            }
+        }
+        else if (!((s32 (*)(Model *, coord3d *, coord3d *, f32 *)) model->unka0)(model, &rw->Header.pos, &sp2c, &rw->Header.ground))
+        {
+            return;
+        }
+    }
+#else
     if (model->unka0 && !((s32 (*)(Model *, coord3d *, coord3d *, f32 *)) model->unka0)(model, &rw->Header.pos, &sp2c, &rw->Header.ground))
     {
         return;
     }
-
+#endif
     sp38.x = sp2c.x - sp38.x;
     sp38.z = sp2c.z - sp38.z;
 
@@ -1137,6 +1183,20 @@ void subcalcpos(Model *arg0)
 #endif
 
     root = arg0->obj->RootNode;
+#ifndef TARGET_N64
+    /* model->obj can still be a 32-bit header copy for a sub-model that was
+     * attached from a ROM image; its RootNode is then not a host pointer. */
+    if (!portPtrLooksHosted(arg0->obj) || !portPtrLooksHosted(root))
+    {
+        static s32 said;
+        if (!said) {
+            said = 1;
+            portConLogf("ge: subcalcpos: non-host model root (%p/%p) - skipped\n",
+                    (void *) arg0->obj, (void *) root);
+        }
+        return;
+    }
+#endif
     if ((root != NULL) && ((root->Opcode & 0xFF) == 1))
     {
         sub_GAME_7F06D490(arg0, root);
@@ -1990,6 +2050,12 @@ void modelUpdateReorderRelations(Model *model, ModelNode *node)
     coord3d sp38;
     coord3d sp2c;
     f32 tmp;
+    {
+        static int said;
+        if (!said) { said = 1; portConLogf("ge: reorder: datas=%p rw=%p mtx=%p op=%02x nrec=%d\n",
+                (void *) model->datas, (void *) rwdata, (void *) mtx, node->Opcode & 0xff,
+                (int) model->obj->numRecords); }
+    }
 
     if (rodata->BSP.reserved == 0)
     {
@@ -2587,6 +2653,10 @@ void modelSetAnimation2(Model *model, ModelAnimation *anim, s32 flip, f32 frame,
 
     model->animlooping = 0;
 
+    type = 0;
+#ifndef TARGET_N64
+    if (portPtrLooksHosted(model->obj) && portPtrLooksHosted(model->obj->RootNode))
+#endif
     type = model->obj->RootNode->Opcode & 0xff;
 
     if (type == MODELNODE_OPCODE_HEADER) {
@@ -2757,7 +2827,7 @@ void modelSetAnimEndFrame(Model *model, f32 endframe) {
 }
 
 void modelSetAnimFlipFunction(Model *model, void *callback) {
-    model->animflipfunc = callback;
+    model->animflipfunc = (uintptr_t) callback;
 }
 
 
@@ -2823,8 +2893,8 @@ void modelSetAnimPlaySpeed(Model *model, f32 animation_rate, f32 startframe) {
 }
 
 
-void sub_GAME_7F06FF5C(Model *model, s32 arg1) {
-    model->unka0 = arg1;
+void sub_GAME_7F06FF5C(Model *model, void *callback) {
+    model->unka0 = (uintptr_t) callback;
 }
 
 
@@ -3541,7 +3611,12 @@ void modelTickAnim(struct Model *model, s32 numticks, s32 update_chrstuff)
                     frame2 = frame;
                     frame = loopframe + frame - limit;
 
+#ifdef PORT_LP64
                     if (model->animflipfunc != 0)
+#else
+                    if (model->animflipfunc != 0
+                        && (uintptr_t) model->animflipfunc >= 0x100000000ULL)
+#endif
                     {
                         ((void (*)(void))model->animflipfunc)();
                     }
@@ -5899,7 +5974,7 @@ s32 loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
     s32 ret;
     s32 source;
     s32 frameSize;
-    u32 dest;
+    uintptr_t dest;
     u32 size;
 
     ret = 0;
@@ -5913,8 +5988,8 @@ s32 loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
     else if (D_80036414 != NULL) // should never be NULL after initAnimationsBuffer is called
     {
         // Get dest from this D_80036414 which points to an array. Align to 16 bytes.
-        dest = ((u32) (D_80036414->animBufferPtr2 + 15) >> 4) * 16;
-        ret = dest;
+        dest = ((uintptr_t) D_80036414->animBufferPtr2 + 15) & ~(uintptr_t) 15;
+        ret = (s32) dest;
 
         // Get source of this animation in ROM with the offset of the frame we'll load
         source = anim->address + (frame * frameSize);
@@ -5929,14 +6004,14 @@ s32 loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
         size = ((u32) (frameSize + 15) >> 4) * 16;
 
         // This copies one animation frame from ROM to the destination in RAM
-        romCopy((void* ) dest, (void* ) source, size);
+        romCopy((void* ) dest, (void*)(uintptr_t) source, size);
 
         // Increment this which serves nothing
         D_80036414->uselessPointer += 1;
 
         // Set this to point to the end of the copied frame
         // This allows to copy another frame after this one
-        D_80036414->animBufferPtr2 = dest + size;
+        D_80036414->animBufferPtr2 = (char *) (dest + size);
     }
     return ret;
 }
@@ -6041,6 +6116,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
                     PROMOTE(rodata->Vertices);
                     PROMOTE(rodata->CollisionVertices);
                     PROMOTE(rodata->PointUsage);
+#ifndef PORT_LP64 /* a Vertex is 16 bytes here: model64.c resolves the related-node words */
                     for (i = 0; i < rodata->numCollisionVertices; i++)
                     {
 #ifndef TARGET_N64
@@ -6073,6 +6149,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
 #endif
                         PROMOTE(rodata->CollisionVertices[i].LinkedTo);
                     }
+#endif
                     rodata->BaseAddr = (void *)fileramaddr;
                     break;
                 }
@@ -6272,7 +6349,11 @@ void portModelCollisionAudit(ModelNode *node, const char *name)
 
             for (i = 0; i < rodata->numCollisionVertices; i++)
             {
+#ifdef PORT_LP64
+                ModelNode  *rel = (rodata->CollisionRelatedNodes != NULL) ? rodata->CollisionRelatedNodes[i] : NULL;
+#else
                 ModelNode  *rel = (ModelNode *) rodata->CollisionVertices[i].CollisionRelatedNode;
+#endif
                 s32         idx = rodata->CollisionVertices[i].CollisionRelatedIndex;
                 const char *fault = NULL;
 
@@ -6483,13 +6564,47 @@ void modelCalculateRwDataLen(struct ModelFileHeader *objheader)
 }
 
 
+static int portPtrLooksHosted(const void *p)
+{
+    uintptr_t v = (uintptr_t) p;
+    /* 32-bit links sign-extend to 0xffffffff........; real host pointers are
+     * either the 0x50.. arena or a high mmap address. */
+    return v >= 0x10000u && (v >> 32) != 0xFFFFFFFFu;
+}
+
+
 void modelInitRwData(Model *model, ModelNode *startnode)
 {
     ModelNode *node = startnode;
 
+    /* Models with numRecords == 0 have no rwdata buffer (menu logos); the
+     * vanilla walk still writes for some opcodes, which dereferences NULL. */
+    if (model->datas == NULL)
+    {
+        return;
+    }
+
     while (node)
     {
-        u32 type = node->Opcode & 0xFF;
+        u32 type;
+
+#ifndef TARGET_N64
+        /* A sub-model that was attached before it was converted to host layout
+         * keeps 32-bit Next/Child links; following one walks into a sign
+         * extended address. Stop instead of faulting (the converted part of the
+         * graph has already had its rwdata initialised). */
+        if (!portPtrLooksHosted(node))
+        {
+            static s32 said;
+            if (!said) {
+                said = 1;
+                portConLogf("ge: modelInitRwData: node %p is not a host pointer - walk stopped\n",
+                        (void *) node);
+            }
+            break;
+        }
+#endif
+        type = node->Opcode & 0xFF;
 
         switch (type)
         {
@@ -6641,6 +6756,12 @@ void modelInit(struct Model *objinst, struct ModelFileHeader *header, u32 *data)
   objinst->attachedto_objinst = NULL;
   objinst->scale = 1.0;
 #ifndef TARGET_N64
+  /* PORT: models allocated from the pool are not zeroed and this slot is called
+   * unconditionally by sub_GAME_7F06D490; a stale value there is a wild call. */
+  objinst->unka0 = 0;
+  objinst->animflipfunc = NULL;
+#endif
+#ifndef TARGET_N64
   /* PORT: GE_MODEL_AUDIT=1 checks the node tree at load and reports bad links,
    * naming the model instead of crashing later. */
   {
@@ -6655,6 +6776,17 @@ void modelInit(struct Model *objinst, struct ModelFileHeader *header, u32 *data)
 // PD: animInit
 void animInit(struct Model *objinst, struct ModelFileHeader *header, u32 *data)
 {
+#ifndef TARGET_N64
+    {
+        static s32 said;
+        if (said < 6) {
+            said++;
+            portConLogf("ge: animInit hdr=%p root=%p nrec=%d data=%p model=%p\n",
+                    (void *) header, (void *) (header ? header->RootNode : NULL),
+                    header ? (s32) header->numRecords : -1, (void *) data, (void *) objinst);
+        }
+    }
+#endif
     modelInit(objinst, header, data);
     objinst->anim = NULL;
     objinst->anim2 = NULL;
@@ -6662,6 +6794,7 @@ void animInit(struct Model *objinst, struct ModelFileHeader *header, u32 *data)
     objinst->animflipfunc = 0;
     objinst->unk9c = 0;
     objinst->unka0 = 0;
+  objinst->animflipfunc = NULL;
     objinst->unk2c = 0.0f;
     objinst->timespeed = 0.0f;
     objinst->unk5c = 0.0f;
@@ -6685,7 +6818,7 @@ void modelAttachPart(Model *pmodel, ModelFileHeader *pmodeldef, ModelNode *pnode
     ModelNode *node;
 
     rwdata->ModelFileHeader = cmodeldef;
-    rwdata->RwDatas = &pmodel->datas[pmodeldef->numRecords];
+    rwdata->RwDatas = (void *) ((u8 *) pmodel->datas + (size_t) pmodeldef->numRecords * 4u);
 
     pnode->Child = cmodeldef->RootNode;
 
@@ -6869,3 +7002,8 @@ void modelNodeReplaceGdl(u32 arg0, ModelNode *node, Gfx *find, Gfx *replacement)
             break;
     }
 }
+
+
+
+
+

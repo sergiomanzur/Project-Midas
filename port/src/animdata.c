@@ -52,9 +52,9 @@ extern void portConLogf(const char *fmt, ...);
  * code reads those fields (grep-verified) - the decomp struct over-declares. */
 #define ANIM_HEADER_SIZE      0x14u
 
-/* zero-filled backing arrays in segments.c; the game romCopy's from these */
-extern unsigned char _animation_dataSegmentRomStart[];
-extern unsigned char _animation_entriesSegmentRomStart[];
+/* the low-arena animation segments (allocated here; see port_animseg.h) */
+#include "port_animseg.h"
+extern void *portAllocHigh(u32 size);
 
 /* initanitable.c: raw PTR_ANIM_* segment offsets (0-terminated, 1 = null
  * entry) - still offsets here because expand_ani_table_entries runs later */
@@ -142,7 +142,7 @@ static void portAnimNative16(unsigned char *p)
 
 static void portAnimConvertEntry(uint32_t offset)
 {
-    unsigned char *seg = _animation_dataSegmentRomStart;
+    unsigned char *seg = port_animation_dataSegmentRomStart;
     unsigned char *hdr = seg + offset;
     uint32_t desc_start, desc_end, i;
     int state;
@@ -205,7 +205,7 @@ static void portAnimBuildCompiled(void)
     portAnimProbe(ANIM_ENTRY_idle, ANIM_ENTRY_fire_standing, 0x2b4c, "ANIM_ENTRY_fire_standing");
     portAnimProbe(ANIM_ENTRY_idle, ANIM_ENTRY_helicopter_takeoff, 0x169bd0, "ANIM_ENTRY_helicopter_takeoff");
 
-    portAnimCopySwapped(_animation_dataSegmentRomStart, ANIM_DATA_empty, ANIM_DATA_SEG_SIZE);
+    portAnimCopySwapped(port_animation_dataSegmentRomStart, ANIM_DATA_empty, ANIM_DATA_SEG_SIZE);
     /* NOTE: the compiled entries blob may end slightly before the full ROM
      * span (last entry tail); the copy then reads adjacent .data, which is
      * harmless - no animation addresses past the last real stream. */
@@ -213,7 +213,7 @@ static void portAnimBuildCompiled(void)
         /* GE_ANIM_ZERO=1: bring-up A/B switch - leave the frame streams
          * zeroed (pre-anim-wave behavior) to isolate whether a rendering
          * bug lives in the frame decode or elsewhere. */
-        portAnimCopySwapped(_animation_entriesSegmentRomStart, ANIM_ENTRY_idle, ANIM_ENTRIES_SEG_SIZE);
+        portAnimCopySwapped(port_animation_entriesSegmentRomStart, ANIM_ENTRY_idle, ANIM_ENTRIES_SEG_SIZE);
     }
 }
 
@@ -234,11 +234,30 @@ static void portAnimProbeRom(const char *name, const unsigned char *built, const
 
 void portAnimDataInit(void)
 {
-    int32_t *tables[2];
+    /* Both tables are pointer-width arrays (initanitable.c: ptrs1 used to be
+     * s32[] on the 32-bit build); walk them as intptr_t so the entry offsets
+     * are read at the right stride on a 64-bit host. */
+    intptr_t *tables[2];
     int t;
     u32 datasize = 0, entsize = 0;
-    const u8 *romdata = romdataSeg("animation_data", &datasize);
-    const u8 *roment = romdataSeg("animation_entries", &entsize);
+    const u8 *romdata;
+    const u8 *roment;
+
+    /* Both images must sit below the 2 GB line: the game stores their
+     * addresses in 32-bit fields (see port_animseg.h). */
+    if (port_animation_dataSegmentRomStart == NULL || port_animation_entriesSegmentRomStart == NULL) {
+        port_animation_dataSegmentRomStart = (u8 *) portAllocHigh(ANIM_DATA_SEG_SIZE);
+        port_animation_entriesSegmentRomStart = (u8 *) portAllocHigh(ANIM_ENTRIES_SEG_SIZE);
+        if (port_animation_dataSegmentRomStart == NULL || port_animation_entriesSegmentRomStart == NULL) {
+            portConLogf("ge: animdata: no low arena for the animation segments\n");
+            exit(1);
+        }
+        portConLogf("ge: animdata: segments at %p / %p\n",
+                (void *) port_animation_dataSegmentRomStart, (void *) port_animation_entriesSegmentRomStart);
+    }
+
+    romdata = romdataSeg("animation_data", &datasize);
+    roment = romdataSeg("animation_entries", &entsize);
 
     /* Both segments are byte-exact ROM spans (as on N64), and the header and
      * descriptor conversion below is the same either way; the compiled arrays
@@ -246,14 +265,14 @@ void portAnimDataInit(void)
     if (romdata != NULL && roment != NULL && datasize == ANIM_DATA_SEG_SIZE && entsize == ANIM_ENTRIES_SEG_SIZE) {
 #ifdef GE_ROMDATA_FALLBACK
         portAnimBuildCompiled();
-        portAnimProbeRom("animation_data", _animation_dataSegmentRomStart, romdata, ANIM_DATA_SEG_SIZE);
-        portAnimProbeRom("animation_entries", _animation_entriesSegmentRomStart, roment, ANIM_ENTRIES_SEG_SIZE);
+        portAnimProbeRom("animation_data", port_animation_dataSegmentRomStart, romdata, ANIM_DATA_SEG_SIZE);
+        portAnimProbeRom("animation_entries", port_animation_entriesSegmentRomStart, roment, ANIM_ENTRIES_SEG_SIZE);
 #else
         portConLogf("ge: romdata: seg animation_data     -> ROM (%u bytes)\n", datasize);
         portConLogf("ge: romdata: seg animation_entries  -> ROM (%u bytes)\n", entsize);
 #endif
-        memcpy(_animation_dataSegmentRomStart, romdata, ANIM_DATA_SEG_SIZE);
-        memcpy(_animation_entriesSegmentRomStart, roment, ANIM_ENTRIES_SEG_SIZE);
+        memcpy(port_animation_dataSegmentRomStart, romdata, ANIM_DATA_SEG_SIZE);
+        memcpy(port_animation_entriesSegmentRomStart, roment, ANIM_ENTRIES_SEG_SIZE);
     } else {
 #ifdef GE_ROMDATA_FALLBACK
         if (romdata != NULL || roment != NULL) {
@@ -266,10 +285,10 @@ void portAnimDataInit(void)
 #endif
     }
 
-    tables[0] = animation_table_ptrs1;
-    tables[1] = animation_table_ptrs2;
+    tables[0] = (intptr_t *) animation_table_ptrs1;
+    tables[1] = (intptr_t *) animation_table_ptrs2;
     for (t = 0; t < 2; t++) {
-        int32_t *p;
+        intptr_t *p;
         for (p = tables[t]; *p != 0; p++) {
             if (*p != 1) {
                 portAnimConvertEntry((uint32_t) *p);
