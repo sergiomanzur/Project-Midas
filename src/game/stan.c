@@ -1042,6 +1042,129 @@ void getTileMidPoint(StandTile *tile, coord3d *out)
 }
 
 
+#ifdef GE_MODDED_CHEATS
+/* Simulant navigation helpers: expose the linked walk-surface graph so the bot
+ * backend does not duplicate STAN's encoding rules. */
+s32 stanGetTilePointCount(StandTile *tile)
+{
+    if (tile == NULL)
+    {
+        return 0;
+    }
+
+    return STAN_PTCOUNT(tile->tail.half);
+}
+
+StandTile *stanGetLinkedTileAtEdge(StandTile *tile, s32 edgeIndex)
+{
+    u16 link;
+
+    if (tile == NULL || edgeIndex < 0 || edgeIndex >= stanGetTilePointCount(tile))
+    {
+        return NULL;
+    }
+
+    link = tile->points[edgeIndex].link;
+
+    if ((link >> 4) == 0)
+    {
+        return NULL;
+    }
+
+    return (StandTile *)(((u8 *)standTileStart) + ((u32)link << 3));
+}
+
+s32 stanGetEdgeMidPointWorld(StandTile *tile, s32 edgeIndex, coord3d *out, f32 *width)
+{
+    s32 pointcount;
+    StandTilePoint *a;
+    StandTilePoint *b;
+    f32 ax, az, bx, bz;
+
+    if (tile == NULL || out == NULL)
+    {
+        return FALSE;
+    }
+
+    pointcount = stanGetTilePointCount(tile);
+
+    if (edgeIndex < 0 || edgeIndex >= pointcount)
+    {
+        return FALSE;
+    }
+
+    a = &tile->points[edgeIndex];
+    b = &tile->points[(edgeIndex + 1) % pointcount];
+    ax = (f32)a->x * inv_level_scale;
+    az = (f32)a->z * inv_level_scale;
+    bx = (f32)b->x * inv_level_scale;
+    bz = (f32)b->z * inv_level_scale;
+    out->x = (ax + bx) * 0.5f;
+    out->y = ((f32)a->y + (f32)b->y) * 0.5f * inv_level_scale;
+    out->z = (az + bz) * 0.5f;
+
+    if (width != NULL)
+    {
+        *width = sqrtf((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+    }
+
+    return TRUE;
+}
+
+f32 stanGetTileCenterClearanceWorld(StandTile *tile)
+{
+    coord3d center;
+    s32 pointcount;
+    s32 i;
+    f32 best = 999999.0f;
+
+    if (tile == NULL)
+    {
+        return 0.0f;
+    }
+
+    pointcount = stanGetTilePointCount(tile);
+
+    if (pointcount < 3)
+    {
+        return 0.0f;
+    }
+
+    getTileMidPoint(tile, &center);
+
+    for (i = 0; i < pointcount; i++)
+    {
+        StandTilePoint *a = &tile->points[i];
+        StandTilePoint *b = &tile->points[(i + 1) % pointcount];
+        f32 ax = (f32)a->x * inv_level_scale;
+        f32 az = (f32)a->z * inv_level_scale;
+        f32 ex = (f32)b->x * inv_level_scale - ax;
+        f32 ez = (f32)b->z * inv_level_scale - az;
+        f32 len = sqrtf(ex * ex + ez * ez);
+
+        if (len > 0.001f)
+        {
+            f32 dist = ex * (center.z - az) - ez * (center.x - ax);
+
+            if (dist < 0.0f)
+            {
+                dist = -dist;
+            }
+
+            dist /= len;
+
+            if (dist < best)
+            {
+                best = dist;
+            }
+        }
+    }
+
+    return best == 999999.0f ? 0.0f : best;
+}
+#endif
+
+
 void getPointJustInsideOfTileTriple(StandTile *tile, s32 tripleIndex /*canonically c */, coord3d *out)
 {
     coord3d midPoint;

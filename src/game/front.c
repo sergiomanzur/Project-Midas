@@ -23,6 +23,9 @@
 #include "chrobjdata.h"
 #include "file2.h"
 #include "front.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#endif
 #include "image_bank.h"
 #include "lv.h"
 #include "initanitable.h"
@@ -626,6 +629,32 @@ struct mp_stage_playercount mp_player_counts[] = {
     {getStringID(LTITLE, TITLE_STR_59_3V1), 4, 4}, //"Team: 3 vs 1"
     {getStringID(LTITLE, TITLE_STR_60_2V1), 3, 3}  //"Team: 2 vs 1"
 };
+
+/* Fewest human players a multiplayer match needs. With Simulants configured one
+ * human can play against the computer players; otherwise Rare's two. */
+static s32 frontMpMinHumans(void)
+{
+#ifdef GE_MODDED_CHEATS
+    if (modMpBotsConfiguredCount() > 0)
+    {
+        return 1;
+    }
+#endif
+    return 2;
+}
+
+/* Does `scen` allow a match of `humans` human players? One human only plays the
+ * free-for-all scenarios against Simulants (team scenarios need real sides). */
+static s32 frontMpScenarioAllowedForCount(s32 scen, s32 humans)
+{
+#ifdef GE_MODDED_CHEATS
+    if (humans == 1)
+    {
+        return scen <= SCENARIO_LTK && modMpBotsConfiguredCount() > 0;
+    }
+#endif
+    return mp_player_counts[scen].min <= humans && humans <= mp_player_counts[scen].max;
+}
 
 struct mp_stage_setup multi_stage_setups[] = {
     /* unlocked by default */
@@ -3717,7 +3746,7 @@ void interface_menu06_modesel(void)
             sndPlaySfx(g_musicSfxBufferPtr, DOOR_METAL_CLOSE_SFX, 0);
         }
     }
-    else if ((243.0f <= cursor_v_pos) && (joyGetControllerCount() >= 2))
+    else if ((243.0f <= cursor_v_pos) && (joyGetControllerCount() >= frontMpMinHumans()))
     {
         mission_difficulty_highlighted = DIFFICULTY_SECRET;
         if (joyGetButtonsPressedThisFrame(PLAYER_1, START_BUTTON|Z_TRIG|A_BUTTON))
@@ -3868,7 +3897,7 @@ Gfx* constructor_menu06_modesel(Gfx* DL)
 
     x = 0x96;
     y = 0xFC;
-    if (joyGetControllerCount() >= 2)
+    if (joyGetControllerCount() >= frontMpMinHumans())
     {
         text_color = 0xFF;
     }
@@ -4525,6 +4554,7 @@ static const struct PortSheetRow port_sheet_rows_general[] = {
      * screen are on HUD. */
     { SHROW_OPT, "look_updown" }, { SHROW_OPT, "auto_aim" }, { SHROW_OPT, "aim_control" },
     { SHROW_OPT, "look_ahead" },
+    { SHROW_OPT, "camera_view" },   /* first person or a third-person camera, every mode */
     /* the view's three, moved here from HUD */
     { SHROW_OPT, "aim_lock" }, { SHROW_OPT, "scope_steady" }, { SHROW_OPT, "head_roll" },
 };
@@ -4569,7 +4599,8 @@ static const struct PortSheetRow port_sheet_rows_mpopts[] = {
     /* ...and its own cheats, unlocked from the start, never solo (lv.c), in
      * the RIGHT column */
     { SHROW_COLBREAK, NULL },
-    /* the left column is full: team damage heads the right one */
+    /* the left column is full: simulants (computer players) and team damage head the right one */
+    { SHROW_OPT, "mp_bots" }, { SHROW_OPT, "mp_bot_difficulty" },
     { SHROW_OPT, "mp_friendly_fire" },
     { SHROW_OPT, "mp_invisibility" }, { SHROW_OPT, "mp_dk_mode" }, { SHROW_OPT, "mp_tiny_players" },
     { SHROW_OPT, "mp_paintball" }, { SHROW_OPT, "mp_no_radar" }, { SHROW_OPT, "mp_turbo_mode" },
@@ -9624,6 +9655,36 @@ void advance_aim_settings_selection(void)
 }
 
 
+#ifdef GE_MODDED_CHEATS
+s32 frontGetMpCharacterCount(void)
+{
+    return (s32)(sizeof(mp_chr_setup) / sizeof(mp_chr_setup[0]));
+}
+
+s32 frontGetMpCharacterData(s32 index, s32 *body, s32 *head, f32 *pov)
+{
+    if (index < 0 || index >= frontGetMpCharacterCount())
+    {
+        return FALSE;
+    }
+
+    if (body != NULL) *body = mp_chr_setup[index].body;
+    if (head != NULL) *head = mp_chr_setup[index].head;
+    if (pov != NULL) *pov = mp_chr_setup[index].pov;
+    return TRUE;
+}
+
+const char *frontGetMpCharacterName(s32 index)
+{
+    if (index < 0 || index >= frontGetMpCharacterCount())
+    {
+        return "";
+    }
+
+    return (const char *)langGet(mp_chr_setup[index].text_preset);
+}
+#endif
+
 void unlock_all_mp_chars(void) {
 #ifndef TARGET_N64
     num_chars_selectable_mp = PORT_MP_CHAR_COUNT;
@@ -10012,9 +10073,9 @@ void init_mp_options_for_scenario(s32 numplayers)
 {
     s32 i;
 
-    if (numplayers < 2)
+    if (numplayers < frontMpMinHumans())
     {
-        numplayers = 2;
+        numplayers = frontMpMinHumans();
     }
 
     selected_num_players = numplayers;
@@ -10053,7 +10114,7 @@ void init_mp_options_for_scenario(s32 numplayers)
         }
     }
 
-    if ((mp_player_counts[scenario].max < selected_num_players) || (selected_num_players < mp_player_counts[scenario].min))
+    if (!frontMpScenarioAllowedForCount(scenario, selected_num_players))
     {
         reset_mp_options_for_scenario(SCENARIO_NORMAL);
 
@@ -10164,7 +10225,7 @@ void interface_menu0E_mpoptions(void)
     viSetZRange(100.0f, 10000.0f);
     viSetUseZBuf(0);
 
-    if (joyGetControllerCount() < 2)
+    if (joyGetControllerCount() < frontMpMinHumans())
     {
         frontChangeMenu(MENU_MODE_SELECT, 0);
         setCursorPOSforMode(gamemode);
@@ -10379,7 +10440,7 @@ void interface_menu0E_mpoptions(void)
 
         if (joyGetControllerCount() < selected_num_players + 1)
         {
-            tmpNumPlayers = 2;
+            tmpNumPlayers = frontMpMinHumans();
         }
         else
         {
@@ -14850,8 +14911,7 @@ static s32 port_mpset_del_armed;      /* Delete Settings was pressed once */
 static s32 portScenValid(s32 base)
 {
     return base >= 0 && base < PORT_SCEN_LISTED
-        && mp_player_counts[base].min <= get_selected_num_players()
-        && get_selected_num_players() <= mp_player_counts[base].max;
+        && frontMpScenarioAllowedForCount(base, get_selected_num_players());
 }
 
 /* a field Rare's scenario rules leave fixed: YOLT has two lives and no
@@ -15790,8 +15850,7 @@ void interface_menu13_mpscenario(void)
             {
                 if (
                     (s32)cursor_v_pos  >=  (0x83 + (-i * -0x16))
-                    && (mp_player_counts[i].min <= get_selected_num_players())
-                    && (get_selected_num_players() <= mp_player_counts[i].max))
+                    && frontMpScenarioAllowedForCount(i, get_selected_num_players()))
                 {
                     dword_CODE_bss_80069780 = i + 1;
                     break;
@@ -15895,7 +15954,7 @@ Gfx * constructor_menu13_mpscenario(Gfx *DL)
     {
         var_s3 = 0xff;
 
-        if (((s32) mp_player_counts[i].max < get_selected_num_players()) || (get_selected_num_players() < (s32) mp_player_counts[i].min))
+        if (!frontMpScenarioAllowedForCount(i, get_selected_num_players()))
         {
             var_s3 = 0x70;
         }
@@ -18781,9 +18840,9 @@ static void portDirectLaunchMpTick(void)
         {
             scen = SCENARIO_NORMAL;
         }
-        if (players < 2 || players > 4)
+        if (players < frontMpMinHumans() || players > 4)
         {
-            players = 2;
+            players = frontMpMinHumans();
         }
         /* GE_MPCHARS=a,b,c,d picks each player's MP character by index into
          * mp_chr_setup (0 Bond, 1 Natalya, 2 Trevelyan, 3 Xenia, 4 Ourumov,

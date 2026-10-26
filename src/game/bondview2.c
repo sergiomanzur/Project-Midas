@@ -39,6 +39,10 @@
 #include "objective_status.h"
 #include "os_extension.h"
 #include "player.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#endif
+#include "thirdperson.h"
 #include "propobj.h"
 #include "quaternion.h"
 #include "random.h"
@@ -110,6 +114,19 @@ static s32 s_PortIntroSkipArmed = 0;
 /*cannonically these are both*/
 #define BONDVIEW_HUD_MSG_TOP_BUFFER_LENGTH 0x97
 #define BONDVIEW_HUD_MSG_BOTTOM_BUFFER_LENGTH 0x65
+#ifdef GE_MODDED_CHEATS
+/* A one-human competitive match is still multiplayer: bots do not increase
+ * getPlayerCount(), which counts human viewports only. Restricted to
+ * competitive matches so campaign death rules stay unchanged. */
+#define MOD_SOLO_COMPETITIVE_MP (gamemode == GAMEMODE_MULTI     && get_scenario() != SCENARIO_COOP && getPlayerCount() == 1)
+#define BV_MP_RULES() (getPlayerCount() >= 2 || MOD_SOLO_COMPETITIVE_MP)
+#define BV_SP_RULES() (getPlayerCount() == 1 && !MOD_SOLO_COMPETITIVE_MP)
+#define BV_SP_LT2()   (getPlayerCount() < 2 && !MOD_SOLO_COMPETITIVE_MP)
+#else
+#define BV_MP_RULES() (getPlayerCount() >= 2)
+#define BV_SP_RULES() (getPlayerCount() == 1)
+#define BV_SP_LT2()   (getPlayerCount() < 2)
+#endif
 /*these*/
 #define MAXTALKMESSLEN 150
 #define MAXMESSAGELEN 100
@@ -361,6 +378,20 @@ f32 g_MpSwirlDistance;
 #define PORT_MODEL_RESERVE_C7 0xc7
 #endif
 
+#ifdef GE_MODDED_CHEATS
+/* One human against Simulants is multiplayer: its body is the selected MP
+ * character, loaded like any other MP body, never Bond's solo body that
+ * borrows the first-person weapon buffers. */
+#define SOLO_CHAR_SP_STYLE() (getPlayerCount() == 1 && gamemode != GAMEMODE_MULTI)
+/* Solo's temporary cinematic body borrows the first-person weapon buffers. A live third-person
+ * body (gameplay camera) must not: it is loaded like an MP body. */
+#define SOLO_CHAR_SP_BUFFERS() (SOLO_CHAR_SP_STYLE() && !(portCameraView() > 0 && g_CameraMode == CAMERAMODE_FP))
+extern s32 portCameraView(void);
+#else
+#define SOLO_CHAR_SP_STYLE() (getPlayerCount() == 1)
+#define SOLO_CHAR_SP_BUFFERS() (getPlayerCount() == 1)
+#endif
+
 void solo_char_load(void)
 {
     f32                         yaw;
@@ -401,7 +432,7 @@ void solo_char_load(void)
 
         bondviewDeregisterPlayerRoom(g_CurrentPlayer);
 
-        if (getPlayerCount() == 1)
+        if (SOLO_CHAR_SP_STYLE())
         {
             helddst = fileGetBondForCurrentFolder();
             switch (g_CurrentPlayer->bondtype)
@@ -525,7 +556,7 @@ void solo_char_load(void)
          * already-loaded bodyheader, so changing `body` any later has no
          * visible effect. */
         {
-            if (portAdzyMode() && getPlayerCount() == 1)
+            if (portAdzyMode() && SOLO_CHAR_SP_STYLE())
             {
                 body = BODY_Siberian_Special_Forces;
             }
@@ -537,7 +568,7 @@ void solo_char_load(void)
             item = starting_weapon[GUNRIGHT];
         }
 
-        if (getPlayerCount() == 1)
+        if (SOLO_CHAR_SP_BUFFERS())
         {
             remove_item_in_hand(GUNLEFT);
             remove_item_in_hand(GUNRIGHT);
@@ -632,7 +663,7 @@ void solo_char_load(void)
          * the other two getPropForHeldItem guards. */
         if ((s32) prop >= 0)
         {
-            if (getPlayerCount() == 1)
+            if (SOLO_CHAR_SP_BUFFERS())
             {
                 helddst      = cursor;
                 helddst      = ((s32)weaponbuf0) + helddst;
@@ -893,7 +924,7 @@ void bondviewSetCameraMode(s32 arg0)
             solo_char_load();
 
             // HACK: ptr_animation_table->data regalloc is backwards
-            sp38 = (struct ModelAnimation *)((s32)stage_intro_anim_table[g_IntroAnimationIndex].anonymous_0 + (s32)&ptr_animation_table->data);
+            sp38 = (struct ModelAnimation *)((s32)stage_intro_anim_table[g_IntroAnimationIndex].anonymous_0 + (intptr_t)&ptr_animation_table->data);
             sp78 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_2;
             ftemp_1 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_1;
             ftemp_3 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_3;
@@ -1063,6 +1094,9 @@ void bondviewSetCameraMode(s32 arg0)
     }
     else if (g_CameraMode == CAMERAMODE_POSEND)
     {
+#ifdef GE_MODDED_CHEATS
+        thirdPersonSpPrepareCinematic();
+#endif
         solo_char_load();
         g_CurrentPlayer->cameratile = NULL;
     }
@@ -5397,7 +5431,7 @@ void bondviewMoveAnimationTick(f32 speed, f32 speedforwards, f32 speedsideways)
             // HACK: ptr_animation_table dereference addition is backwards.
             // this should be:
             // ptr_animation_table->data[g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)]]
-            bheadStartDeathAnimation((struct ModelAnimation *) ((s32)g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)] + (s32)&ptr_animation_table->data[0]), randomGetNext() & 1, 0.0f, 1.0f);
+            bheadStartDeathAnimation((struct ModelAnimation *) ((s32)g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)] + (intptr_t)&ptr_animation_table->data[0]), randomGetNext() & 1, 0.0f, 1.0f);
             g_CurrentPlayer->startnewbonddie = FALSE;
         }
 
@@ -10368,6 +10402,9 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
         }
 
         // perfect dark call: bmove0f0cc654
+#ifdef GE_MODDED_CHEATS
+        thirdPersonSpTick();
+#endif
         bondviewMoveAnimationTick(maxspeed, g_CurrentPlayer->speedforwards, sp3A0);
 
         headpos_x = g_CurrentPlayer->headpos.f[0];
@@ -11544,6 +11581,14 @@ Gfx *bondviewRenderDebugBondView(Gfx *gdl)
         cam_up.x = collision->applied_view2.x;
         cam_up.y = collision->applied_view2.y;
         cam_up.z = collision->applied_view2.z;
+
+#ifdef GE_MODDED_CHEATS
+        /* Third-person camera: back off from the first-person eye (Gameplay > Camera). */
+        if (!g_CurrentPlayer->bonddead && thirdPersonActive())
+        {
+            thirdPersonAdjustCamera(&cam_pos, &cam_look, &cam_up);
+        }
+#endif
     }
 
     bondviewUpdateCameraMatrices(&cam_pos, &cam_look, &cam_up);
@@ -11558,12 +11603,29 @@ Gfx *bondviewRenderDebugBondView(Gfx *gdl)
     if (ft4 >= M_PI_F) {
         ft4 -= M_TAU_F;
     }
+#ifdef GE_MODDED_CHEATS
+    if (thirdPersonActive())
+    {
+        /* The body's aim follows the player's own look pitch. Derived from the offset camera's
+         * ray it would twist the visible torso sideways. */
+        ft4 = bondviewGetPlayerPitchRadians();
+
+        if (ft4 > 1.40f) ft4 = 1.40f;
+        if (ft4 < -1.40f) ft4 = -1.40f;
+    }
+#endif
     g_CurrentPlayer->field_2A08 = ft4;
 
     angle = atan2f(-vec.x, -vec.z);
     if (angle >= M_PI_F) {
         angle -= M_TAU_F;
     }
+#ifdef GE_MODDED_CHEATS
+    if (thirdPersonActive())
+    {
+        angle = 0.0f;
+    }
+#endif
     g_CurrentPlayer->field_2A0C = angle;
 
     return gdl;
@@ -12090,7 +12152,7 @@ void mp_respawn_handler(void)
     bondviewClearUpperTextDisplayFlag(-1);
 
 
-    if ((getPlayerCount() >= 2) && (startpadcount > 0))
+    if ((BV_MP_RULES()) && (startpadcount > 0))
     {
         var_v1 = bondviewGetRandomSpawnPadIndex();
     }
@@ -12597,6 +12659,9 @@ Gfx *maybe_mp_interface(Gfx *gdl)
 
     gunUpdateAndFireBothHands();
     gunRenderCasings(&gdl);
+#ifdef GE_MODDED_CHEATS
+    if (!thirdPersonActive()) /* the weapon is in the visible body's hands instead */
+#endif
     gunRenderFirstPersonGunModels(&gdl);
     gdl = bondviewRenderWatch(gdl);
     if (g_CurrentPlayer->mpmenuon != 0)
@@ -12647,7 +12712,7 @@ Gfx *maybe_mp_interface(Gfx *gdl)
         }
     }
 
-    if (getPlayerCount() == 1)
+    if (BV_SP_RULES())
     {
         display_objective_status_text_on_status_change();
     }
@@ -12665,7 +12730,7 @@ Gfx *maybe_mp_interface(Gfx *gdl)
             if (doblood)
             {
                 die_blood_image_routine(0);
-                if (getPlayerCount() == 1)
+                if (BV_SP_RULES())
                 {
                     // This unusual comma-expression syntax is required for a byte match.
                     set_missionstate((musicStopSlot(-1), 0));
@@ -12737,7 +12802,7 @@ blood_frame_held:;
                 }
                 if (currentPlayerIsFadeComplete())
                 {
-                    if (getPlayerCount() == 1)
+                    if (BV_SP_RULES())
                     {
                         bondviewSetCameraMode(CAMERAMODE_DEATH_CAM_SP);
                     }
@@ -12939,6 +13004,18 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
     s32 padding;
     s32 sp2C;
     s32 sp28;
+#ifdef GE_MODDED_CHEATS
+    s32 bot_damage_owner = modMpBotsGetDamageOwner();
+
+    /* Block participant-on-participant damage before rumble, armour, damage
+     * flash or kill-stat bookkeeping. Self damage is unaffected. */
+    if ((bot_damage_owner >= 0 && modMpBotsFriendlyFireBlocksCoopAlly())
+        || (g_ModMpHumanDamageAttack
+            && modMpBotsFriendlyFireBlocksHuman(playerid, get_cur_playernum())))
+    {
+        return;
+    }
+#endif
 
 #ifndef TARGET_N64
     /* FRIENDLY FIRE off (Gameplay Options): a shot or blast from a player of
@@ -12966,7 +13043,7 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
         hudMakeDamageSegments(g_CurrentPlayer->health_display_values, 0x2E, -1, currentPlayerGetHealth());
     }
 
-    if (getPlayerCount() < 2 || (g_stopPlayFlag == 0 && g_gameOverFlag == 0))
+    if (BV_SP_LT2() || (g_stopPlayFlag == 0 && g_gameOverFlag == 0))
     {
         if (g_PlayerIsInTank == 1)
         {
@@ -12997,9 +13074,9 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
         /* LTK HEALTH (Multiplayer Options): Licence to Kill's one-hit kills
          * in any scenario (video.c portMpLtkHealthActive) */
         extern s32 portMpLtkHealthActive(void);
-        if (getPlayerCount() >= 2 && (get_scenario() == SCENARIO_LTK || portMpLtkHealthActive()))
+        if (BV_MP_RULES() && (get_scenario() == SCENARIO_LTK || portMpLtkHealthActive()))
 #else
-        if (getPlayerCount() >= 2 && get_scenario() == SCENARIO_LTK)
+        if (BV_MP_RULES() && get_scenario() == SCENARIO_LTK)
 #endif
         {
             // the damage dealt is always equivalent to how much health and armor the player has
@@ -13008,14 +13085,14 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
         }
 
         if (g_CurrentPlayer->cheatBondInvincible == FALSE && g_CurrentPlayer->bonddead == FALSE && g_PlayerInvincible == FALSE &&
-            (g_CurrentPlayer->damageshowtime < 0 || (getPlayerCount() >= 2 && g_CurrentPlayer->damageshowtime == 0)))
+            (g_CurrentPlayer->damageshowtime < 0 || (BV_MP_RULES() && g_CurrentPlayer->damageshowtime == 0)))
         {
             if (g_CurrentPlayer->watch_animation_state != WATCH_ANIMATION_0x5 && g_CurrentPlayer->watch_animation_state != WATCH_ANIMATION_0xc)
             {
                 g_CurrentPlayer->oldhealth = g_CurrentPlayer->bondhealth;
                 g_CurrentPlayer->oldarmour = g_CurrentPlayer->bondarmour;
 
-                if (getPlayerCount() >= 2)
+                if (BV_MP_RULES())
                 {
                     cur_player_num = get_cur_playernum();
                     angle = g_playerPointers[cur_player_num]->vv_theta - (360.0f - ((atan2f(vectorx, vectorz) * 180.0f) / 3.1415927f));
@@ -13069,7 +13146,7 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
 
                     if (g_CurrentPlayer->bondhealth <= 0.0f)
                     {
-                        if (getPlayerCount() >= 2)
+                        if (BV_MP_RULES())
                         {
                             sp2C = get_cur_playernum();
                             sp28 = 0;
@@ -13079,35 +13156,47 @@ void record_damage_kills(f32 damage_amount, f32 vectorx, f32 vectorz, s32 player
                                 sp28 = 1;
                             }
 
-                            // Ensure inventory is dropped on suicides. For this reason, it's not part of the next "if".
-                            drop_inventory();
-
-                            if (sp2C != playerid)
+#ifdef GE_MODDED_CHEATS
+                            if (bot_damage_owner >= 0)
                             {
+                                /* A Simulant killed this human: the bot owns the kill credit. */
+                                drop_inventory();
                                 increment_num_deaths();
-                            }
-
-                            set_cur_player(playerid);
-
-                            if (sp2C == playerid)
-                            {
-                                increment_num_suicides_display_MP();
+                                modMpBotsRecordBotKillOnHuman(bot_damage_owner, sp2C);
                             }
                             else
+#endif
                             {
-                                increment_num_kills_display_text_in_MP();
+                                // Ensure inventory is dropped on suicides. For this reason, it's not part of the next "if".
+                                drop_inventory();
 
-                                if (sp28 != 0)
+                                if (sp2C != playerid)
                                 {
-                                    increment_num_times_killed_MwtGC();
+                                    increment_num_deaths();
                                 }
+
+                                set_cur_player(playerid);
+
+                                if (sp2C == playerid)
+                                {
+                                    increment_num_suicides_display_MP();
+                                }
+                                else
+                                {
+                                    increment_num_kills_display_text_in_MP();
+
+                                    if (sp28 != 0)
+                                    {
+                                        increment_num_times_killed_MwtGC();
+                                    }
+                                }
+
+                                set_cur_player(sp2C);
+
+                                if(1);
+
+                                g_playerPlayerData[playerid].kill_counts[sp2C]++;
                             }
-
-                            set_cur_player(sp2C);
-
-                            if(1);
-
-                            g_playerPlayerData[playerid].kill_counts[sp2C]++;
                         }
 
                         bondviewKillCurrentPlayer();
@@ -14047,7 +14136,6 @@ s32 playerTick(PropRecord *prop)
  
     index = getPlayerPointerIndex(prop);
     chr = prop->chr;
- 
     if (chr != NULL)
     {
         if (get_player_position_in_shuffled(get_cur_playernum()) == 0)
@@ -14093,14 +14181,20 @@ s32 playerTick(PropRecord *prop)
         goto clear_and_return;
     }
 
-    if (getPlayerCount() < 2)
+#ifdef GE_MODDED_CHEATS
+    /* Third person shows the player's own body, driven like any remote player's. */
+    if (!thirdPersonActive())
+#endif
     {
-        goto clear_and_return;
-    }
+        if (getPlayerCount() < 2)
+        {
+            goto clear_and_return;
+        }
 
-    if (get_cur_playernum() == index)
-    {
-        goto clear_and_return;
+        if (get_cur_playernum() == index)
+        {
+            goto clear_and_return;
+        }
     }
  
     anim = 0;
@@ -14150,7 +14244,7 @@ s32 playerTick(PropRecord *prop)
             {
                 cur = ppointers[index]->players_cur_animation;
  
-                if (cur == (g_bondviewBondDeathAnimations[i] + ((s32) ptr_animation_table)))
+                if (cur == (g_bondviewBondDeathAnimations[i] + ((intptr_t)ptr_animation_table)))
                 {
                     found = 1;
                 }
@@ -14163,7 +14257,7 @@ s32 playerTick(PropRecord *prop)
             }
             else
             {
-                anim = g_bondviewBondDeathAnimations[randomGetNext() % g_bondviewBondDeathAnimationsCount] + ((s32) ptr_animation_table);
+                anim = g_bondviewBondDeathAnimations[randomGetNext() % g_bondviewBondDeathAnimationsCount] + ((intptr_t)ptr_animation_table);
                 angle = 0.5f;
             }
  
@@ -14345,7 +14439,7 @@ lean_return_to_centre:
  
             if (fa->anim != 0)
             {
-                anim = fa->anim + (s32) ptr_animation_table;
+                anim = fa->anim + (intptr_t)ptr_animation_table;
             }
  
             angle *= fa->x;

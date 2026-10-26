@@ -221,6 +221,14 @@ padN_stickmode.
   mp_no_armor         | 0          | No body armour pickups on the maps
   mp_friendly_fire    | 1          | 0 = team-mates can't hurt each other in
                       |            | 2v2, 3v1 and 2v1
+  camera_view         | 0          | 0 First Person, 1 Third Person Close,
+                      |            | 2 Third Person Shoulder, 3 Third Person Far;
+                      |            | applies to every mode
+  mp_bots             | 0          | Simulants (computer players) added to a
+                      |            | multiplayer match, 0 to 8; any value above 0
+                      |            | also lets one human start a match
+  mp_bot_difficulty   | 2          | Simulant skill: 0 Very Easy, 1 Easy, 2 Normal,
+                      |            | 3 Hard, 4 Very Hard, 5 Extreme
 
 Retired keys (ignored): composite.
 Older names, still read when the new key is missing: hfov and fov (now

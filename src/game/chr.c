@@ -28,6 +28,10 @@
 #include "matrixmath.h"
 #include "objecthandler.h"
 #include "player.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#include "front.h"
+#endif
 #ifndef TARGET_N64
 #include <stdio.h> /* GE_INTRODBG diag in chrRenderProp */
 #endif
@@ -1477,6 +1481,13 @@ s32 sub_GAME_7F01FC10(Model *model, coord3d *src, coord3d *dst, f32 *ground_y)
 
     if (chr->prop->stan != NULL)
     {
+#ifdef GE_MODDED_CHEATS
+        /* Player-like Simulant motor: override only X/Z of the animation's
+         * proposed root destination, before native collision/floor
+         * resolution. Every other chr stays on the existing path because
+         * modMpBotsApplyLateral returns FALSE for them. */
+        modMpBotsApplyLateral(chr, src, dst);
+#endif
         if ((chr->actiontype == ACT_DIE) && (chr->act_die.timeextra > ground))
         {
 #ifdef BUGFIX_R1
@@ -1866,6 +1877,61 @@ void chrpropCleanupForRemoval(PropRecord *prop)
         sub_GAME_7F06B248(chr->field_20);
     }
 }
+
+
+#ifdef GE_MODDED_CHEATS
+/* Remove a single-player third-person body without destroying mission props held in Bond's
+ * inventory. chrpropCleanupForRemoval() frees every child object of the viewer prop, but a
+ * collected mission pickup stays parented to it (its inventory entry keeps the PropRecord), so
+ * freeing it would fail the objective. Only the body's own generated weapons and hat go. */
+void chrpropCleanupForThirdPersonToggle(PropRecord *prop)
+{
+    ChrRecord *chr = prop->chr;
+    Model *model = chr->model;
+    PropRecord *child;
+    PropRecord *prev;
+    ObjectRecord *obj;
+
+    if (chr->field_160[0].ptr_SEbuffer1 != NULL && sndGetPlayingState(chr->field_160[0].ptr_SEbuffer1) != 0) {
+        sndDeactivate(chr->field_160[0].ptr_SEbuffer1);
+    }
+    if (chr->field_160[0].ptr_SEbuffer2 != NULL && sndGetPlayingState(chr->field_160[0].ptr_SEbuffer2) != 0) {
+        sndDeactivate(chr->field_160[0].ptr_SEbuffer2);
+    }
+    if (chr->field_160[1].ptr_SEbuffer1 != NULL && sndGetPlayingState(chr->field_160[1].ptr_SEbuffer1) != 0) {
+        sndDeactivate(chr->field_160[1].ptr_SEbuffer1);
+    }
+    if (chr->field_160[1].ptr_SEbuffer2 != NULL && sndGetPlayingState(chr->field_160[1].ptr_SEbuffer2) != 0) {
+        sndDeactivate(chr->field_160[1].ptr_SEbuffer2);
+    }
+
+    sub_GAME_7F050DE8(model);
+    chrpropDeregisterRooms(prop);
+
+    for (child = prop->child; child != NULL; child = prev)
+    {
+        prev = child->prev;
+
+        if (child == chr->weapons_held[GUNLEFT]
+            || child == chr->weapons_held[GUNRIGHT]
+            || child == chr->handle_positiondata_hat)
+        {
+            obj = (ObjectRecord *) child->obj;
+            objDetach(child);
+            objFreePermanently(obj, TRUE);
+        }
+    }
+
+    clear_aircraft_model_obj(model);
+
+    chr->model = NULL;
+    chr->chrnum = -1;
+
+    if (chr->field_20 != NULL) {
+        sub_GAME_7F06B248(chr->field_20);
+    }
+}
+#endif
 
 
 /**
@@ -2407,6 +2473,10 @@ s32 chrTick(PropRecord *prop)
     s32 headSwitchVisible;
     s32 headVisible;
     chranimticks_t tickamount;
+#ifdef GE_MODDED_CHEATS
+    s32 botMode;
+    s32 botFullTick;
+#endif
 
     renderdata = D_8002CC6C;
     chr = prop->chr;
@@ -2416,6 +2486,20 @@ s32 chrTick(PropRecord *prop)
     tickamount = portAnimTicks();
 #else
     tickamount = g_ClockTimer;
+#endif
+
+#ifdef GE_MODDED_CHEATS
+    /* Simulation runs on the first player pass; later split-screen passes
+     * only do viewer-specific visibility and render work for a Simulant. */
+    botMode = gamemode == GAMEMODE_MULTI
+        && prop->type == PROP_TYPE_CHR
+        && modMpBotsGetSlotForChr(chr) >= 0;
+    botFullTick = !botMode || get_player_position_in_shuffled(get_cur_playernum()) == 0;
+
+    if (botMode && !botFullTick)
+    {
+        tickamount = 0;
+    }
 #endif
 
     if ((!(chr->chrflags & CHRFLAG_HIDDEN)) || (chr->chrflags & CHRFLAG_00040000))
@@ -2432,7 +2516,12 @@ s32 chrTick(PropRecord *prop)
         }
         else
         {
-            chrlvActionTick(chr);
+#ifdef GE_MODDED_CHEATS
+            if (!botMode || botFullTick)
+#endif
+            {
+                chrlvActionTick(chr);
+            }
 
             if (chr->model == NULL)
             {
@@ -2552,7 +2641,14 @@ s32 chrTick(PropRecord *prop)
         {
             headSwitchVisible = posIsOnScreen(prop, &prop->pos, getinstsize(model), 1);
 
+#ifdef GE_MODDED_CHEATS
+            /* Simulant movement is simulation-owned, not visibility-owned: the
+             * lateral motor runs from chrUpdateAnim, so an off-screen bot must
+             * still execute it. */
+            if (botMode || headSwitchVisible || (chr->chrflags & CHRFLAG_INIT))
+#else
             if (headSwitchVisible || (chr->chrflags & CHRFLAG_INIT))
+#endif
             {
                 chrUpdateAnim(chr, tickamount);
             }
@@ -2582,7 +2678,12 @@ after_position_update:
         chr->hidden |= CHRHIDDEN_BACKGROUND_AI;
     }
 
-    chrUpdateAimProperties(chr);
+#ifdef GE_MODDED_CHEATS
+    if (!botMode || botFullTick)
+#endif
+    {
+        chrUpdateAimProperties(chr);
+    }
 
     if (chr->field_20 != NULL)
     {
@@ -2626,6 +2727,9 @@ after_position_update:
 
         if (g_CurModelChr->flinchcnt >= 0)
         {
+#ifdef GE_MODDED_CHEATS
+            if (!botMode || botFullTick)
+#endif
             g_CurModelChr->flinchcnt += g_ClockTimer;
 
 #ifdef VERSION_EU
@@ -2643,7 +2747,12 @@ after_position_update:
         g_ModelJointPositionedFunc = NULL;
         modelSetDistanceScale(1.0f);
 
-        update_color_shading(&chr->shadecol, &chr->nextcol);
+#ifdef GE_MODDED_CHEATS
+        if (!botMode || botFullTick)
+#endif
+        {
+            update_color_shading(&chr->shadecol, &chr->nextcol);
+        }
 
         prop->zDepth = sub_GAME_7F06C768(model);
 
@@ -3524,6 +3633,15 @@ void chrTestHit(PropRecord *prop, ShotData *shotdata)
         return;
     }
 
+#ifdef GE_MODDED_CHEATS
+    /* A bot's weapon transitions can clear its rendered hit list before the
+     * next render rebuilds it; sub_GAME_7F06C010 does not accept NULL. */
+    if (chr->field_20 == NULL && modMpBotsGetSlotForChr(chr) >= 0)
+    {
+        return;
+    }
+#endif
+
     model = chr->model;
     modelsize = getinstsize(model);
 
@@ -4126,3 +4244,11 @@ s32 chrGetOnscreenRenderBounds(PropRecord *arg0, struct coord3d *arg1, struct co
     return 0;
 }
 
+
+#ifdef GE_MODDED_CHEATS
+/* Campaign co-op is not part of this port, so no chr is ever an escort. */
+s32 chrCoopIsEscortCandidate(ChrRecord *chr)
+{
+    return FALSE;
+}
+#endif

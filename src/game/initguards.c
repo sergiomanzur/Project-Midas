@@ -5,6 +5,10 @@
 #include "chr.h"
 #include "chrobjdata.h"
 #include "initguards.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#include "front.h"
+#endif
 
 void init_guards(void) {
     animation_rate = 1.0f;
@@ -17,6 +21,9 @@ void init_guards(void) {
     player1_guardID = 0x1388;
     g_ChrSlots = 0;
     g_NumChrSlots = 0;
+#ifdef GE_MODDED_CHEATS
+    modMpBotsResetRuntime();
+#endif
     init_obj_register_difficulty_vals();
 }
 
@@ -28,6 +35,14 @@ void alloc_init_GUARDdata_entries(s32 count)
     s32 i;
     
     g_NumChrSlots = count + 10; //special guards?
+#ifdef GE_MODDED_CHEATS
+    /* Simulants need their own persistent ChrRecords: one live and one
+     * overlapping corpse record per configured bot. */
+    if (gamemode == GAMEMODE_MULTI)
+    {
+        g_NumChrSlots += modMpBotsGetCount() * 2;
+    }
+#endif
 
     g_ChrSlots = mempAllocBytesInBank(align_addr_zero(g_NumChrSlots * sizeof(ChrRecord)), MEMPOOL_STAGE);
     for(i = 0; g_NumChrSlots > i; i++)

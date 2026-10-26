@@ -60,6 +60,10 @@
 #include "unk_092E50.h"
 #include "frametiming.h"
 #include "chr.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#include "mprules.h"
+#endif
 
 // bss
 //CODE.bss:8008C260
@@ -880,7 +884,7 @@ void lvlStageLoad(s32 stage)
             s32 s3;
             player_data = (struct player_data *)&g_playerPlayerData[i];
 
-            if (getPlayerCount() == 1)
+            if (SP_RULES())
             {
                 // s4 variable
                 player_data->autoaim = 0;
@@ -979,6 +983,11 @@ void lvlStageLoad(s32 stage)
         }
 
         set_cur_player(0);
+#ifdef GE_MODDED_CHEATS
+        /* Resolve Simulant resources and prime their animated-model slots
+         * while lvlReset still owns exact-size allocation. */
+        modMpBotsPrepareStage();
+#endif
     }
 
     /**
@@ -1578,7 +1587,7 @@ void lvlTick(void)
          * solo cheat menu, and solo never reads the sheet. This pass runs even
          * when no solo cheat is on; stage end still clears them all
          * (cheatDisableAllCheats). */
-        if (g_AppendCheatSinglePlayer != 0 || getPlayerCount() >= 2)
+        if (g_AppendCheatSinglePlayer != 0 || MP_RULES())
         {
             extern s32 portMpCheatSetting(s32 which);
             extern s32 portTrueEnemyRocketsEnabled(void);
@@ -1591,7 +1600,7 @@ void lvlTick(void)
             {
                 s32 on = g_CheatActivated[i] && (!cheatIsEnemyRockets(i) || portTrueEnemyRocketsEnabled());
 
-                if (getPlayerCount() >= 2)
+                if (MP_RULES())
                 {
                     s32 w;
 
@@ -1608,12 +1617,12 @@ void lvlTick(void)
                 {
                     extern s32 g_PortHudMsgQuiet; /* bondview2.c hudmsgBottomShow */
 
-                    g_PortHudMsgQuiet = getPlayerCount() >= 2;   /* no "PAINTBALL MODE ON" popup at an MP start */
+                    g_PortHudMsgQuiet = MP_RULES();   /* no "PAINTBALL MODE ON" popup at an MP start */
                     cheatButtonTurnOnCheatForPlayers(i);
                     g_PortHudMsgQuiet = 0;
                 }
             }
-            if (getPlayerCount() >= 2)
+            if (MP_RULES())
             {   /* log which are on, once per MP stage, so they show up
                  * in a user's log */
                 extern int printf(const char *, ...);
@@ -1655,7 +1664,7 @@ void lvlTick(void)
 #endif
     }
 
-    if ((getPlayerCount() >= 2) && (g_CurrentStageToLoad != LEVELID_TITLE))
+    if ((MP_RULES()) && (g_CurrentStageToLoad != LEVELID_TITLE))
     {
         if (get_mission_state() == MISSION_STATE_6)
         {

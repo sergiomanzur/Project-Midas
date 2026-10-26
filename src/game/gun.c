@@ -42,6 +42,8 @@
 #include "stan.h"
 #include "gbi_extension.h"
 #include "frametiming.h" /* speedgraphframes */
+#include "mprules.h"
+#include "thirdperson.h"
 
 
 // bss
@@ -1352,7 +1354,7 @@ void currentPlayerUnEquipWeaponWrapper(enum GUNHAND hand, enum ITEM_IDS weapid)
         g_CurrentPlayer->hands[hand].previous_weapon = weapon_num;
     }
 
-    if (getPlayerCount() >= 2)
+    if (MP_RULES() || thirdPersonActive())
     {
         sub_GAME_7F09B368(hand);
     }

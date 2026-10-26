@@ -131,6 +131,12 @@ add_compile_definitions(
     LEFTOVERDEBUG LEFTOVERSPECTRUM BUGFIX_R0
     NONMATCHING AVOID_UB _LANGUAGE_C
 )
+# Simulants (multiplayer bots) and the third-person camera, ported from
+# GoldenEye 007 Plus. Gameplay-visible, so it can be switched off for stock behaviour.
+option(GE_MODDED_CHEATS "Enable simulants and third-person camera" ON)
+if(GE_MODDED_CHEATS)
+    add_compile_definitions(GE_MODDED_CHEATS=1)
+endif()
 if(WIN32)
     # MinGW's ANSI-stdio layer defines static inline sprintf/printf wrappers
     # that collide with GE's own sprintf (src/sprintf.c, bespoke semantics).

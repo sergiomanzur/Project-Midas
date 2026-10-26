@@ -17,6 +17,7 @@
 #include "game/player.h"
 #include "game/ramromreplay.h"
 #include "game/stan.h"
+#include "mprules.h"
 
 
 /**
@@ -440,7 +441,7 @@ void bondviewLoadSetupIntroSection(void)
 
     if (startpadcount > 0)
     {
-        if ((getPlayerCount() >= 2) && (startpadcount > 0))
+        if ((MP_RULES()) && (startpadcount > 0))
         {
             rand_pad_index = bondviewGetRandomSpawnPadIndex();
         }
@@ -712,7 +713,7 @@ void bondviewLoadSetupIntroSection(void)
     g_CurrentPlayer->field_3B8.f[1] = (g_CurrentPlayer->field_488.pos.f[1] / FIELD_3B8_FACTOR);
     g_CurrentPlayer->field_3B8.f[2] = (g_CurrentPlayer->field_488.pos.f[2] / FIELD_3B8_FACTOR);
 
-    if (getPlayerCount() == 1)
+    if (SP_RULES())
     {
         bondviewSetCameraMode(CAMERAMODE_INTRO);
     }

@@ -4,5 +4,7 @@
 #include <ultra64.h>
 
 f32 atan2f(f32 y, f32 x);
+f32 asinf(f32 x);
+f32 acosf(f32 x);
 
 #endif

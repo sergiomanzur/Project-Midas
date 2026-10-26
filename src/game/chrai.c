@@ -34,6 +34,9 @@
 #include <random.h>
 #include <snd.h>
 #include <ultra64.h>
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#endif
 
 // hack? used to match as called with 2 args, but decompiled code takes 1
 extern s32 objectiveGetStatus_WEAK(s32 objectiveNum, s32);
@@ -912,6 +915,13 @@ void                   ai(PropDefHeaderRecord *Entityp, PROP_TYPE EntityType)
     if (EntityType == PROP_TYPE_CHR)
     {
         ChrEntityp = Entityp;
+#ifdef GE_MODDED_CHEATS
+        /* Simulants are driven exclusively by mpbots.c, never guard AI lists. */
+        if (ChrEntityp != NULL && modMpBotsGetSlotForChr(ChrEntityp) >= 0)
+        {
+            return;
+        }
+#endif
     }
     else if (EntityType == PROP_TYPE_OBJ)
     {

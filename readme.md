@@ -35,6 +35,13 @@ Files next to the executable:
 
 An older `ge.ini` is renamed to `midas.ini` automatically on first run.
 
+### Simulants and the third-person camera
+
+* **Simulants** are computer players for multiplayer. Set how many (0 to 8) and how skilled they are on the multiplayer setup's Gameplay Options sheet (`mp_bots`, `mp_bot_difficulty`). With at least one, a single human can start a match against them.
+* **Camera** (Options > Gameplay > General Settings, `camera_view`) is First Person, or a third-person camera (Close, Shoulder or Far) in every mode.
+
+Both come from [GoldenEye 007 Plus](https://github.com/Joshua-1248/GoldenEye-007-Plus) and are reworked for this port; see `midas_ini_help.txt` for the keys.
+
 ## Building
 
 The build runs in Docker, which has every tool and library both builds need. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:

@@ -46,6 +46,20 @@ public class MidasActivity extends SDLActivity {
             }
         }
 
+        /* Same hook for a direct multiplayer start (--es ge_mp temple --es ge_mpplayers 1
+         * --es ge_mpscenario 0 --es ge_mplength 2): the engine's GE_MP* test variables. */
+        String[] mpExtras = {"ge_mp", "ge_mpplayers", "ge_mpscenario", "ge_mplength"};
+        for (String extra : mpExtras) {
+            String value = getIntent() != null ? getIntent().getStringExtra(extra) : null;
+            if (value != null && !value.isEmpty()) {
+                try {
+                    SDLActivity.nativeSetenv(extra.toUpperCase(java.util.Locale.ROOT), value);
+                } catch (Throwable ignored) {
+                    // Not fatal: the game just starts at the normal menu.
+                }
+            }
+        }
+
         if (!hasRom) {
             // The launcher normally prevents this. If the game activity is
             // restored after its data was cleared, go back to the importer

@@ -248,8 +248,8 @@ void expand_ani_table_entries(s32** arg0)
     while (*var_v0 != 0) {
         if (*var_v0 != (s32*)1) {
             *var_v0 = (s32)((s32)*var_v0 + (s32)(&ptr_animation_table->data));
-            ((struct anim_entry *)*var_v0)->unk08 += (s32)&ptr_animation_table->data;
-            ((struct anim_entry *)*var_v0)->unk10 += (s32)&ptr_animation_table->data;
+            ((struct anim_entry *)*var_v0)->unk08 += (intptr_t)&ptr_animation_table->data;
+            ((struct anim_entry *)*var_v0)->unk10 += (intptr_t)&ptr_animation_table->data;
         }
         var_v0++;
     }

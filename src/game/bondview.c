@@ -47,6 +47,7 @@
 #include "stan.h"
 #include "stanintersection.h"
 #include "textrelated.h"
+#include "mprules.h"
 
 #ifdef VERSION_EU
 
@@ -1558,7 +1559,7 @@ s32 bondviewGetRandomSpawnPadIndex(void)
  */
 void init_player_BONDdata(void)
 {
-    if (getPlayerCount() >= 2)
+    if (MP_RULES())
     {
         g_CurrentPlayer->controldef = get_player_control_style(get_cur_playernum());
         cur_player_set_control_type(get_player_control_style(get_cur_playernum()));
@@ -1710,7 +1711,7 @@ void bondviewPlayerBeginLife(void)
 
     bondinvAddInvItem(ITEM_FIST);
 
-    if (getPlayerCount() >= 2)
+    if (MP_RULES())
     {
         currentPlayerEquipWeaponWrapper(GUNLEFT, starting_weapon[GUNLEFT]);
         currentPlayerEquipWeaponWrapper(GUNRIGHT, starting_weapon[GUNRIGHT]);

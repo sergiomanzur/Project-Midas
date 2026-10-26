@@ -358,4 +358,10 @@ void unlock_all_mp_chars(void);
 u8 get_player_mp_char_gender(int player);
 s32 pull_and_display_text_for_folder_a0(s32 arg0);
 
+#ifdef GE_MODDED_CHEATS
+s32 frontGetMpCharacterCount(void);
+s32 frontGetMpCharacterData(s32 index, s32 *body, s32 *head, f32 *pov);
+const char *frontGetMpCharacterName(s32 index);
+#endif
+
 #endif

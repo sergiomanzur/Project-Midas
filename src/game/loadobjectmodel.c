@@ -49,6 +49,26 @@ s32 getposstan(struct coord3d *pos, StandTile *stan, f32 radius, struct coord3d 
 */
 s32 sizepropdef(PropDefHeaderRecord *pdef)
 {
+#ifdef PORT_LP64
+    {
+        /* PORT: a ROM-served setup's records are N64-layout words until prop.c expands them
+         * (port/src/lp64_setup.c); afterwards every record is its host struct and its stride
+         * is the host stride. The compiled-in setups were already host-layout. */
+        extern s32 g_portSetupFromRom;
+        extern s32 g_portPropdefsHost;
+        extern u32 portSetupPropdefWords(u32 type, s32 host);
+
+        if (g_portSetupFromRom)
+        {
+            u32 words = portSetupPropdefWords(pdef->type, g_portPropdefsHost);
+
+            if (words != 0)
+            {
+                return (s32) words;
+            }
+        }
+    }
+#endif
     #if 1
     switch (pdef->type)
     {

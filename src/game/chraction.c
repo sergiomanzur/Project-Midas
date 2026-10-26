@@ -29,6 +29,9 @@
 #include "model.h"
 #include "objecthandler.h"
 #include "player.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#endif
 #include "propobj.h"
 #include "stan.h"
 #include "frametiming.h" /* portTickCadence - see the guard accuracy note in chrlvUpdateShotbondsum */
@@ -97,6 +100,59 @@ void get_sound_at_range                       (ChrRecord *self, s32 arg1, s32 ar
 void chrlvSetGoposSegDistTotal                (ChrRecord *self, struct waydata *arg1, coord3d *arg2);
 void chrlvIterateGuardSeeShotDie              (ChrRecord *, s32);
 s32 chrlvCall7F02982C                         (PropRecord *arg0, coord3d *arg1, f32 arg2);
+#ifdef GE_MODDED_CHEATS
+/* Simulants are player stand-ins, not guards. Their death presentation uses
+ * the same generic animation pool as a human player and ignores guard
+ * hit-part and explosion-specific death tables. */
+static void chrlvStartSimulantPlayerDeath(ChrRecord *self)
+{
+    s32 count = g_bondviewBondDeathAnimationsCount;
+    s32 anim;
+
+    if (self == NULL || self->model == NULL)
+    {
+        return;
+    }
+
+    if (count <= 0)
+    {
+        count = 0;
+
+        while (g_bondviewBondDeathAnimations[count] != 0)
+        {
+            count++;
+        }
+    }
+
+    if (count <= 0)
+    {
+        return;
+    }
+
+    anim = g_bondviewBondDeathAnimations[randomGetNext() % (u32)count];
+
+    chrStopFiring(self);
+    self->actiontype = ACT_DIE;
+    self->act_die.notifychrindex = 0;
+    self->act_die.thudframe1 = -1.0f;
+    self->act_die.thudframe2 = -1.0f;
+    self->act_die.timeextra = 0.0f;
+    self->act_die.elapseextra = 0.0f;
+    self->act_die.extraspeed.f[0] = 0.0f;
+    self->act_die.extraspeed.f[1] = 0.0f;
+    self->act_die.extraspeed.f[2] = 0.0f;
+    self->sleep = 0;
+
+    /* bheadStartDeathAnimation(..., speed=1) resolves to speed 0.5 and a
+     * 12-frame merge; use those exact human-player values on the bot model. */
+    modelSetAnimation(self->model,
+        (struct ModelAnimation *)((intptr_t)&ptr_animation_table->data[0] + anim),
+        randomGetNext() & 1, 0.0f, 0.5f, 12.0f);
+
+    /* Do not destroy held weapon models or allocate drops inside a hitscan
+     * callback: modMpBotsTick drops inventory after the shot has resolved. */
+}
+#endif
 void chrlvTickSurrender                       (ChrRecord *self);
 void chrlvWalkingAnimationRelated             (ChrRecord *self);
 void setSeenBondTimeToNow                     (ChrRecord *guardData);
@@ -2479,6 +2535,16 @@ bool handles_shot_actors(ChrRecord *self, s32 hitpart, coord3d *vector, s32 weap
     PropRecord *myprop = self->prop; //sp60
     s32 padd;
 
+#ifdef GE_MODDED_CHEATS
+    /* Campaign human-to-bot friendly fire only: competitive bots have no
+     * assigned team, so they remain legitimate targets. */
+    if (modMpBotsFriendlyFireBlocksCoopAlly()
+        && isPlayer && modMpBotsGetSlotForChr(self) >= 0)
+    {
+        return FALSE;
+    }
+#endif
+
     // Handle hat shots.
     if (hitpart == HIT_HAT && self->handle_positiondata_hat)
     {
@@ -2543,8 +2609,24 @@ bool handles_shot_actors(ChrRecord *self, s32 hitpart, coord3d *vector, s32 weap
         }
     }
 
+#ifdef GE_MODDED_CHEATS
+    /* Human multiplayer damage is ignored while damageshowtime is active;
+     * give Simulants the same post-hit grace window before any damage or
+     * audio side effects. This also rejects shots into dead corpses. */
+    if (modMpBotsGetSlotForChr(self) >= 0 && !modMpBotsCanTakeDamage(self))
+    {
+        return FALSE;
+    }
+#endif
+
     self->numarghs++;
     self->chrflags |= CHRFLAG_WAS_HIT;
+#ifdef GE_MODDED_CHEATS
+    if (isPlayer && self->prop->type != PROP_TYPE_VIEWER)
+    {
+        modMpBotsNotifyHumanHit(self, get_cur_playernum());
+    }
+#endif
 
     // If the chr is invincible, make them flinch then we're done
     if (self->chrflags & CHRFLAG_INVINCIBLE)
@@ -2644,6 +2726,13 @@ bool handles_shot_actors(ChrRecord *self, s32 hitpart, coord3d *vector, s32 weap
 #    endif
                 self->damage += damageToCause;
 
+#ifdef GE_MODDED_CHEATS
+            if (modMpBotsGetSlotForChr(self) >= 0 && damageToCause > 0.0f)
+            {
+                modMpBotsOnDamageAccepted(self);
+            }
+#endif
+
             if (self->damage < 0.0f)
             {
                 f32 endframe = -1.0f; //sp34
@@ -2655,6 +2744,27 @@ bool handles_shot_actors(ChrRecord *self, s32 hitpart, coord3d *vector, s32 weap
             }
         }
 
+#ifdef GE_MODDED_CHEATS
+        if (hitpart != HIT_HAT
+            && modMpBotsGetSlotForChr(self) >= 0 && damageToCause > 0.0f)
+        {
+            /* Damage still accumulates through the normal ChrRecord path, but
+             * Simulants never enter guard ACT_ARGH/PREARGH: a lethal hit goes
+             * straight to the human-player death pool, whatever the hit part. */
+            if (self->damage >= self->maxdamage)
+            {
+                chrlvStartSimulantPlayerDeath(self);
+                chrDropItems(self);
+                increment_num_kills_display_text_in_MP();
+
+                if (self->chrflags & CHRFLAG_COUNT_DEATH_AS_CIVILIAN)
+                {
+                    inc_cur_civilian_casualties();
+                }
+            }
+        }
+        else
+#endif
         if (hitpart != HIT_HAT)
         {
             // Cancel current animation and prepare for argh
@@ -2714,6 +2824,13 @@ s32 chrlvExplosionDamage(ChrRecord *self, coord3d *arg1, f32 damage, s32 arg3)
         return 0;
     }
 
+#ifdef GE_MODDED_CHEATS
+    if (modMpBotsGetSlotForChr(self) >= 0 && !modMpBotsCanTakeDamage(self))
+    {
+        return 0;
+    }
+#endif
+
     self->chrflags |= CHRFLAG_WAS_HIT;
     if (self->chrflags & CHRFLAG_INVINCIBLE)
     {
@@ -2723,6 +2840,13 @@ s32 chrlvExplosionDamage(ChrRecord *self, coord3d *arg1, f32 damage, s32 arg3)
     self->numarghs += 1;
     self->damage += damage;
     self->chrflags |= CHRFLAG_WAS_DAMAGED;
+
+#ifdef GE_MODDED_CHEATS
+    if (modMpBotsGetSlotForChr(self) >= 0 && damage > 0.0f)
+    {
+        modMpBotsOnDamageAccepted(self);
+    }
+#endif
 
     if (self->damage > 0.0f)
     {
@@ -2752,6 +2876,20 @@ s32 chrlvExplosionDamage(ChrRecord *self, coord3d *arg1, f32 damage, s32 arg3)
         self->fallspeed.f[0] = sp2C.f[0];
         self->fallspeed.f[1] = sp2C.f[1];
         self->fallspeed.f[2] = sp2C.f[2];
+
+#ifdef GE_MODDED_CHEATS
+        /* Human multiplayer deaths do not use guard explosion-death clips:
+         * keep the damage but use the generic player death pool, and leave
+         * the corpse at its actual position (no launch impulse). */
+        if (modMpBotsGetSlotForChr(self) >= 0)
+        {
+            self->fallspeed.f[0] = 0.0f;
+            self->fallspeed.f[1] = 0.0f;
+            self->fallspeed.f[2] = 0.0f;
+            chrlvStartSimulantPlayerDeath(self);
+            goto simulant_explosion_death_bookkeeping;
+        }
+#endif
 
         if (atan < subroty)
         {
@@ -2792,9 +2930,17 @@ s32 chrlvExplosionDamage(ChrRecord *self, coord3d *arg1, f32 damage, s32 arg3)
             modelSetAnimEndFrame(self_model, sp38->anonymous_6);
         }
 
+#ifdef GE_MODDED_CHEATS
+simulant_explosion_death_bookkeeping:
+#endif
         if (arg3 != 0)
         {
-            play_sound_for_shot_actor(self);
+#ifdef GE_MODDED_CHEATS
+            if (modMpBotsGetSlotForChr(self) < 0)
+#endif
+            {
+                play_sound_for_shot_actor(self);
+            }
         }
 
         chrDropItems(self);
@@ -6080,7 +6226,17 @@ s32 chrlvUpdateAimendsideback(ChrRecord *self, struct weapon_firing_animation_ta
 
     if ((attack_type & TARGET_FRONT_OF_CHR) == 0)
     {
-        player_prop = getCurrentPlayerProp();
+#ifdef GE_MODDED_CHEATS
+        if ((attack_type & TARGET_BOND) && modMpBotsGetTargetProp(self) != NULL)
+        {
+            player_prop = modMpBotsGetTargetProp(self);
+        }
+        else
+#endif
+        {
+            player_prop = getCurrentPlayerProp();
+        }
+
         self_prop = self->prop;
         current_player_pos = &player_prop->pos;
 
@@ -6092,6 +6248,15 @@ s32 chrlvUpdateAimendsideback(ChrRecord *self, struct weapon_firing_animation_ta
 
         if (attack_type & TARGET_BOND)
         {
+#ifdef GE_MODDED_CHEATS
+            if (modMpBotsGetTargetProp(self) != NULL)
+            {
+                /* Bot targets are explicit props, not the viewport's current
+                 * Bond. The firing ray does the authoritative obstruction test. */
+                seen_bond_flag = 1;
+            }
+            else
+#endif
             if ((attack_type & TARGET_DONTTURN) != 0)
             {
                 seen_bond_flag = 1;
@@ -6579,6 +6744,19 @@ void chrlvUpdateShotbondsum(ChrRecord *self, s32 *arg1, s32 *arg2, ITEM_IDS item
     s32 padding; // unused
     s32 phi_v1;
 
+#ifdef GE_MODDED_CHEATS
+    /* Bots use the physical firing ray for hits. Retail shotbondsum damages
+     * g_CurrentPlayer directly, which is unrelated to an explicit bot target
+     * in split-screen multiplayer. */
+    if (modMpBotsGetSlotForChr(self) >= 0)
+    {
+        *arg1 = 0;
+        *arg2 = 0;
+        self->shotbondsum = 0.0f;
+        return;
+    }
+#endif
+
     player_prop = getCurrentPlayerProp();
     self_prop = self->prop;
 
@@ -6809,16 +6987,45 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
     s32 sp44;
     s32 unused;
     f32 sp4C;
+    ITEM_IDS attack_item;
+#ifdef GE_MODDED_CHEATS
+    s32 botextracdtypes;
+#endif
 
     self_prop = self->prop;
     weapon_prop = chrGetEquippedWeaponProp(self, hand);
+#ifdef GE_MODDED_CHEATS
+    botextracdtypes = modMpBotsGetSlotForChr(self) >= 0 ? CDTYPE_PLAYERS : 0;
+#endif
 
     if (weapon_prop != NULL)
     {
         sp27C = 0;
         sp278 = 0;
         prop_selfchr = weapon_prop->chr;
-        player_prop = getCurrentPlayerProp();
+#ifdef GE_MODDED_CHEATS
+        /* A bot's weapon is authoritative: its movement action stays
+         * independent of firing, so the ACT_ATTACK union is not valid. */
+        if (modMpBotsGetSlotForChr(self) >= 0 && weapon_prop->weapon != NULL)
+        {
+            attack_item = weapon_prop->weapon->weaponnum;
+        }
+        else
+#endif
+        {
+            attack_item = prop_selfchr->act_attack.attack_item;
+        }
+
+#ifdef GE_MODDED_CHEATS
+        if (modMpBotsGetTargetProp(self) != NULL)
+        {
+            player_prop = modMpBotsGetTargetProp(self);
+        }
+        else
+#endif
+        {
+            player_prop = getCurrentPlayerProp();
+        }
         phi_v1 = 1;
 
         if (self->actiontype == ACT_ATTACK)
@@ -6831,31 +7038,45 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
         if (
             (sp44 == 0)
             || (self->seen_bond_time >= (g_GlobalTimer - CHRLV_SEEN_RECENT_CHECK))
-            || (bondwalkItemGetAutomaticFiringRate(prop_selfchr->act_attack.attack_item) < 0))
+            || (bondwalkItemGetAutomaticFiringRate(attack_item) < 0))
         {
             sp268 = 0;
             sp264 = 0;
 
-            self->firecount[hand]++;
-
-            if (bondwalkItemGetAutomaticFiringRate(prop_selfchr->act_attack.attack_item) < 0)
+#ifdef GE_MODDED_CHEATS
+            if (modMpBotsGetSlotForChr(self) >= 0)
             {
+                /* The bot AI owns the Simulant fire interval: one queued
+                 * trigger is one authoritative ray, so do not apply the guard
+                 * ACT_ATTACK cadence a second time. */
+                self->firecount[hand]++;
                 sp268 = 1;
                 sp264 = 1;
             }
-            else if (((s32) self->firecount[hand] % bondwalkItemGetAutomaticFiringRate(prop_selfchr->act_attack.attack_item)) == 0)
+            else
+#endif
             {
-                sp268 = 1;
+                self->firecount[hand]++;
 
-                if ((((s32) self->firecount[hand] % (s32) (bondwalkItemGetAutomaticFiringRate(prop_selfchr->act_attack.attack_item) * 2)) == 0)
-                    || (prop_selfchr->act_attack.attack_item == ITEM_LASER))
+                if (bondwalkItemGetAutomaticFiringRate(attack_item) < 0)
                 {
+                    sp268 = 1;
                     sp264 = 1;
                 }
-            }
-            else
-            {
-                sp278 = 1;
+                else if (((s32) self->firecount[hand] % bondwalkItemGetAutomaticFiringRate(attack_item)) == 0)
+                {
+                    sp268 = 1;
+
+                    if ((((s32) self->firecount[hand] % (s32) (bondwalkItemGetAutomaticFiringRate(attack_item) * 2)) == 0)
+                        || (attack_item == ITEM_LASER))
+                    {
+                        sp264 = 1;
+                    }
+                }
+                else
+                {
+                    sp278 = 1;
+                }
             }
 
             if (sp268 != 0)
@@ -6884,7 +7105,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                     }
                 }
 
-                if (stanTestLineUnobstructed(&self_stan, self_prop->pos.x, self_prop->pos.f[2], sp240.f[0], sp240.f[2], CDTYPE_DOORS, sp240.f[1] - self->ground, sp240.f[1] - self->ground, 0.0f, 1.0f) != 0)
+                if (stanTestLineUnobstructed(&self_stan, self_prop->pos.x, self_prop->pos.f[2], sp240.f[0], sp240.f[2], CDTYPE_DOORS | botextracdtypes, sp240.f[1] - self->ground, sp240.f[1] - self->ground, 0.0f, 1.0f) != 0)
                 {
                     sp238 = self_stan;
                 }
@@ -6900,7 +7121,20 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                     sp230 = 0;
                     sp22C = 1;
 
-                    sp21C = chrlvAttackRelated7F0292A8(self, &sp240, sp238);
+#ifdef GE_MODDED_CHEATS
+                    if (modMpBotsGetSlotForChr(self) >= 0)
+                    {
+                        /* The explicit bot target already maintains
+                         * targetinsight; chrlvAttackRelated7F0292A8 would read
+                         * ACT_ATTACK.entityid for a bot still in ACT_GOPOS.
+                         * The physical ray below stays the obstruction authority. */
+                        sp21C = 1;
+                    }
+                    else
+#endif
+                    {
+                        sp21C = chrlvAttackRelated7F0292A8(self, &sp240, sp238);
+                    }
 
                     sp220.f[0] = cosf(sp24C) * sinf(subroty);
                     sp220.f[1] = sinf(sp24C);
@@ -6914,7 +7148,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                     stanResetHits();
                     self_stan = sp238;
 
-                    if (stanTestLineUnobstructed(&self_stan, sp240.f[0], sp240.f[2], sp258.f[0], sp258.f[2], CDTYPE_OBJS | CDTYPE_DOORS | CDTYPE_CHRS | CDTYPE_PATHBLOCKER, sp240.f[1], sp240.f[1], sp258.f[1], sp258.f[1]) == 0)
+                    if (stanTestLineUnobstructed(&self_stan, sp240.f[0], sp240.f[2], sp258.f[0], sp258.f[2], CDTYPE_OBJS | CDTYPE_DOORS | CDTYPE_CHRS | CDTYPE_PATHBLOCKER | botextracdtypes, sp240.f[1], sp240.f[1], sp258.f[1], sp258.f[1]) == 0)
                     {
                         chrlvStanLineDirIntersection(&sp240, &sp220, &sp258);
                         sp254 = self_stan;
@@ -6931,7 +7165,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
 
                     sp20C = (dx * dx) + (dy * dy) + (dz * dz);
 
-                    if (prop_selfchr->act_attack.attack_item == ITEM_ROCKETLAUNCH)
+                    if (attack_item == ITEM_ROCKETLAUNCH)
                     {
                         if (((dx * dx) + (dy * dy) + (dz * dz)) > 160000.0f)
                         {
@@ -7004,7 +7238,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                             sp27C = 0;
                         }
                     }
-                    else if (prop_selfchr->act_attack.attack_item == ITEM_GRENADELAUNCH)
+                    else if (attack_item == ITEM_GRENADELAUNCH)
                     {
                         if (((dx * dx) + (dy * dy) + (dz * dz)) > 160000.0f)
                         {
@@ -7048,7 +7282,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
 
                             if (((dx * dx) + (dy * dy) + (dz * dz)) <= sp20C)
                             {
-                                chrlvUpdateShotbondsum(self, &sp234, &sp230, prop_selfchr->act_attack.attack_item);
+                                chrlvUpdateShotbondsum(self, &sp234, &sp230, attack_item);
                                 sp22C = sp230 == 0;
 
                                 if ((sp234 != 0) && ((self->actiontype == ACT_ATTACK) || (self->actiontype == ACT_ATTACKROLL)))
@@ -7071,7 +7305,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                             sp258.f[1] = player_prop->pos.f[1];
                             sp258.f[2] = player_prop->pos.f[2];
                             sp254 = player_prop->stan;
-                            recall_joy2_hits_edit_detail_edit_flag(prop_selfchr->act_attack.attack_item, &player_prop->type, -1);
+                            recall_joy2_hits_edit_detail_edit_flag(attack_item, &player_prop->type, -1);
                         }
                         else
                         {
@@ -7094,7 +7328,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
 
                             if (stanSavedColl_posData != NULL)
                             {
-                                recall_joy2_hits_edit_detail_edit_flag(prop_selfchr->act_attack.attack_item, &stanSavedColl_posData->type, -1);
+                                recall_joy2_hits_edit_detail_edit_flag(attack_item, &stanSavedColl_posData->type, -1);
 
                                 if (stanSavedColl_posData->type == PROP_TYPE_CHR)
                                 {
@@ -7109,6 +7343,19 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
 #endif
                                         )
                                     {
+#ifdef GE_MODDED_CHEATS
+                                        if (modMpBotsGetSlotForChr(self) >= 0)
+                                        {
+                                            if (!modMpBotsFriendlyFireBlocksCoopAlly()
+                                                || modMpBotsGetSlotForChr(stanSavedColl_posData->chr) < 0)
+                                            {
+                                                modMpBotsNotifyBotHit(stanSavedColl_posData->chr, self);
+                                                handles_shot_actors(stanSavedColl_posData->chr, 0xF, &sp220, attack_item, 0);
+                                            }
+                                        }
+                                        else
+#endif
+                                        {
 #ifndef TARGET_N64
                                         /* Rare's flagged guards hit HIT_CHEST (0xF) every time; the
                                          * cheat finds the real part (chr.c portChrStrayHitPart) */
@@ -7130,34 +7377,43 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
                                             extern s32 g_PortStrayHitByModel;
 
                                             printf("ge: enemyff: chr %d's shot hit chr %d (item %d, part %d by %s)\n", (int) self->chrnum,
-                                                   (int) stanSavedColl_posData->chr->chrnum, (int) prop_selfchr->act_attack.attack_item, (int) ffpart,
+                                                   (int) stanSavedColl_posData->chr->chrnum, (int) attack_item, (int) ffpart,
                                                    g_PortStrayHitByModel ? "model" : "height");
                                         }
-                                        handles_shot_actors(stanSavedColl_posData->chr, ffpart, &sp220, prop_selfchr->act_attack.attack_item, 0);
+                                        handles_shot_actors(stanSavedColl_posData->chr, ffpart, &sp220, attack_item, 0);
 #else
-                                        handles_shot_actors(stanSavedColl_posData->chr, 0xF, &sp220, prop_selfchr->act_attack.attack_item, 0);
+                                        handles_shot_actors(stanSavedColl_posData->chr, 0xF, &sp220, attack_item, 0);
 #endif
+                                        }
                                     }
                                 }
+#ifdef GE_MODDED_CHEATS
+                                else if (stanSavedColl_posData->type == PROP_TYPE_VIEWER
+                                    && modMpBotsGetSlotForChr(self) >= 0)
+                                {
+                                    modMpBotsDamageViewer(modMpBotsGetSlotForChr(self), stanSavedColl_posData,
+                                        attack_item, &sp220);
+                                }
+#endif
                                 else if ((stanSavedColl_posData->type == PROP_TYPE_OBJ) || (stanSavedColl_posData->type == PROP_TYPE_WEAPON))
                                 {
                                     chrobjMaybeDetonateObjectIfFlags(
                                         stanSavedColl_posData->obj,
-                                        gunItemGetDestructionAmount(prop_selfchr->act_attack.attack_item),
+                                        gunItemGetDestructionAmount(attack_item),
                                         &sp258,
-                                        prop_selfchr->act_attack.attack_item,
+                                        attack_item,
                                         get_cur_playernum());
                                 }
                             }
                             else
                             {
-                                recall_joy2_hits_edit_flag(prop_selfchr->act_attack.attack_item, &sp258, -1);
+                                recall_joy2_hits_edit_flag(attack_item, &sp258, -1);
                             }
                         }
 
                         if (sp264 != 0)
                         {
-                            switch (prop_selfchr->act_attack.attack_item)
+                            switch (attack_item)
                             {
                                 case ITEM_WPPK:
                                 case ITEM_WPPKSIL:
@@ -7186,7 +7442,7 @@ void chrlvFireWeaponRelated(ChrRecord *self, s32 hand)
 
                         if (sp264 != 0)
                         {
-                            CapBeamLengthAndDecideIfRendered(&self->beams[hand], prop_selfchr->act_attack.attack_item, &sp240, &sp258);
+                            CapBeamLengthAndDecideIfRendered(&self->beams[hand], attack_item, &sp240, &sp258);
                         }
                     }
                 }
@@ -8072,6 +8328,13 @@ s32 chrlvApplySpeed(ChrRecord *self, coord3d *arg1, s32 arg2, f32 *speedPtr)
 
     maxSpeed *= self_model->playspeed;
     accel *= self_model->playspeed;
+#ifdef GE_MODDED_CHEATS
+    {
+        f32 botmult = modMpBotsGetMoveMultiplier(self);
+        maxSpeed *= botmult;
+        accel *= botmult;
+    }
+#endif
 
 #ifndef TARGET_N64
     {   /* field-paced caller: integrate whole fields, not this tick's

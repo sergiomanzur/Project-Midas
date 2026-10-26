@@ -86,6 +86,8 @@ extern u32 D_80035CC0;
  * directly, which upstream's extern list does not carry because its own
  * code only ever reaches them through D_80035CC0's adjacency. */
 #include <stdio.h> /* stderr - port diagnostics */
+#include "mprules.h"
+#include "thirdperson.h"
 extern u32 D_80035CC4[];
 #endif
 extern u32 D_80035D00;
@@ -3827,7 +3829,7 @@ void gunTickHandState(enum GUNHAND hand, s32 triggerOn)
             g_CurrentPlayer->ammoheldarr[get_ammo_type_for_weapon(var_s1)] += handptr->weapon_ammo_in_magazine;
             handptr->weapon_ammo_in_magazine = 0;
 
-            if (getPlayerCount() >= 2)
+            if (MP_RULES() || thirdPersonActive())
             {
                 sub_GAME_7F09B368(hand);
             }
@@ -3921,7 +3923,7 @@ void gunTickHandState(enum GUNHAND hand, s32 triggerOn)
 
         if (handptr->field_88C == 0)
         {
-            if (getPlayerCount() >= 2)
+            if (MP_RULES() || thirdPersonActive())
             {
                 sub_GAME_7F09B398(hand);
             }
@@ -4262,7 +4264,7 @@ void gunTickHandState(enum GUNHAND hand, s32 triggerOn)
     {
         if ((handptr->field_88C == 0) && (var_s1 < 0x21))
         {
-            if (getPlayerCount() >= 2)
+            if (MP_RULES() || thirdPersonActive())
             {
                 sub_GAME_7F09B398(hand);
             }

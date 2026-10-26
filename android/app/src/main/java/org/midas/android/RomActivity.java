@@ -527,6 +527,13 @@ public class RomActivity extends Activity {
         if (stage != null) {
             intent.putExtra("ge_stage", stage);
         }
+        /* ...and the direct multiplayer start (GE_MP, GE_MPPLAYERS, GE_MPSCENARIO, GE_MPLENGTH). */
+        for (String extra : new String[]{"ge_mp", "ge_mpplayers", "ge_mpscenario", "ge_mplength"}) {
+            String value = getIntent().getStringExtra(extra);
+            if (value != null) {
+                intent.putExtra(extra, value);
+            }
+        }
         startActivity(intent);
     }
 
