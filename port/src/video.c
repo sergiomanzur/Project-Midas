@@ -172,6 +172,7 @@ static int s_CfgRoomCache = 2;        /* [display] room_cache: 0 off, 1 CPU
                                        * replay, 2 GPU-retained rooms + model
                                        * parts (gfx_roomcache.inl) */
 #else
+static int s_RoomCacheExplicit = 0;   /* midas.ini or GE_ROOMCACHE named a room_cache: the Android auto default stands down */
 static int s_CfgRoomCache = 0;        /* PC: 2 = the GL retained path
                                        * (gfx_opengl.cpp retained_*), off by
                                        * default on PC */
@@ -1052,7 +1053,7 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "mipmaps") == 0
         || SDL_strcasecmp(key, "hw_mipmaps") == 0) { s_CfgMipmaps = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "n64_aa") == 0)        { s_CfgN64Aa = SDL_atoi(value) != 0; return 1; }
-    if (SDL_strcasecmp(key, "room_cache") == 0)    { s_CfgRoomCache = SDL_atoi(value); if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0; if (s_CfgRoomCache == 0) { s_RoomCacheBeforeHw = 0; /* room_cache: an explicit 0 is not put back */ } if (s_CfgTickHz == -1 && s_CfgRoomCache != 0) { portConLogf("ge: video: tickhz=hw - room_cache forced 0\n"); s_RoomCacheBeforeHw = s_CfgRoomCache; s_CfgRoomCache = 0; } portRoomCacheSetMode(s_CfgRoomCache); return 1; }
+    if (SDL_strcasecmp(key, "room_cache") == 0)    { s_RoomCacheExplicit = 1; s_CfgRoomCache = SDL_atoi(value); if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0; if (s_CfgRoomCache == 0) { s_RoomCacheBeforeHw = 0; /* room_cache: an explicit 0 is not put back */ } if (s_CfgTickHz == -1 && s_CfgRoomCache != 0) { portConLogf("ge: video: tickhz=hw - room_cache forced 0\n"); s_RoomCacheBeforeHw = s_CfgRoomCache; s_CfgRoomCache = 0; } portRoomCacheSetMode(s_CfgRoomCache); return 1; }
 #ifdef GE_XBOX
     if (SDL_strcasecmp(key, "xbox_mode") == 0)
     {
@@ -4845,6 +4846,7 @@ s32 videoInit(void)
         const char *e = getenv("GE_ROOMCACHE");
         if (e != NULL)
         {
+            s_RoomCacheExplicit = 1;
             s_CfgRoomCache = SDL_atoi(e);
             if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0;
             portRoomCacheSetMode(s_CfgRoomCache);
@@ -4856,6 +4858,10 @@ s32 videoInit(void)
             gfx_tri_hoist = s_CfgTriHoist ? 1u : 0u;
         }
         portConLogf("ge: video: room_cache=%d tri_hoist=%d\n", s_CfgRoomCache, s_CfgTriHoist);
+        {
+            extern void portProfSampleInit(void); /* profsample.c: GE_PROFSAMPLE=1 */
+            portProfSampleInit();
+        }
     }
     { /* [display] hw_mipmaps: N64 mip chains on G_TL_LOD draws (reduces Low Res
        * moire). GE_HWMIPMAPS=0/1 overrides the ini for A/B. */
@@ -4912,6 +4918,22 @@ s32 videoInit(void)
 
     SDL_StopTextInput();
 
+#ifdef __ANDROID__
+    {   /* Qualcomm Adreno: the GPU-retained room and model-part cache cuts the render thread's work in
+         * busy scenes by a third to a half (Archives: 14 -> 9 ms a frame, a 50 fps dip back to 60) and
+         * was checked on Adreno 750. Other GL drivers stay on the interpreter until verified; an
+         * explicit room_cache= in midas.ini always wins. */
+        extern int gfx_opengl_renderer_is_adreno(void);
+
+        if (!s_RoomCacheExplicit && s_CfgRoomCache == 0 && s_CfgTickHz != -1 && gfx_opengl_renderer_is_adreno())
+        {
+            s_CfgRoomCache = 2;
+            portRoomCacheSetMode(s_CfgRoomCache);
+            portConLogf("ge: video: Adreno GPU - room_cache defaults to 2 (set room_cache=0 in midas.ini to turn it off)\n");
+        }
+    }
+#endif
+
     portRenderThreadStart(); /* item 15: must be the LAST init step - it moves GL off this thread */
 
     s_VideoInitDone = true;
@@ -4941,6 +4963,10 @@ void videoStartFrame(void)
          * mission ticks alone, so its self-expiring stamp says "a level is
          * rendering". Menu and cutscene frames render at window res (the
          * 640x480 menu mode must never drop to 240 lines). */
+        {
+            extern void portProfSampleTick(void);
+            portProfSampleTick();
+        }
         gfx_low_res = videoRenderLines(y);
         gfx_start_frame();
     }

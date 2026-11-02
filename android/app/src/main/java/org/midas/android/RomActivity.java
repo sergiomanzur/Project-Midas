@@ -527,11 +527,14 @@ public class RomActivity extends Activity {
         if (stage != null) {
             intent.putExtra("ge_stage", stage);
         }
-        /* ...and the direct multiplayer start (GE_MP, GE_MPPLAYERS, GE_MPSCENARIO, GE_MPLENGTH). */
-        for (String extra : new String[]{"ge_mp", "ge_mpplayers", "ge_mpscenario", "ge_mplength"}) {
-            String value = getIntent().getStringExtra(extra);
-            if (value != null) {
-                intent.putExtra(extra, value);
+        /* ...and every other engine test variable (--es ge_mp temple, --es ge_drive 1, ...). */
+        android.os.Bundle extras = getIntent().getExtras();
+        if (extras != null) {
+            for (String extra : extras.keySet()) {
+                String value = extras.get(extra) instanceof String ? (String) extras.get(extra) : null;
+                if (extra.startsWith("ge_") && value != null) {
+                    intent.putExtra(extra, value);
+                }
             }
         }
         startActivity(intent);

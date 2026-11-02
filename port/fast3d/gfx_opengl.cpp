@@ -956,7 +956,18 @@ extern "C" unsigned g_GfxUpW, g_GfxUpH;
 unsigned long long g_GfxUpDrainUs, g_GfxUpTexUs, g_GfxUpMipUs, g_GfxUpErrUs;
 unsigned g_GfxUpW, g_GfxUpH;
 
+/* 1 when the GL renderer is a Qualcomm Adreno (video.c turns the retained-geometry cache on by default there) */
+extern "C" int gfx_opengl_renderer_is_adreno(void) {
+    const char* r = (const char*)glGetString(GL_RENDERER);
+    return r != NULL && strstr(r, "Adreno") != NULL;
+}
+
+extern "C" unsigned g_PortTexUploads = 0;               /* textures uploaded (stats line "tex") */
+extern "C" unsigned long long g_PortTexUploadBytes = 0;
+
 static void gfx_opengl_upload_texture(const uint8_t* rgba32_buf, uint32_t width, uint32_t height) {
+    g_PortTexUploads++;
+    g_PortTexUploadBytes += (unsigned long long)width * height * 4u;
     { /* diagnostic (GE_TEXDUMP_ALL=1): write every UNIQUE upload to
        * texall_<n>_<w>x<h>.bin (contact-sheet triage, F2.5 blue floor).
        * Capped; uniqueness by cheap content hash. */
@@ -1290,6 +1301,35 @@ static void gfx_opengl_set_use_alpha(bool use_alpha, bool modulate) {
  * window is a world distance at every range. Immediate draws only; retained
  * room decals keep the one-sided test. GE_DEC_CLIP=0 = old behaviour,
  * GE_DEC_TOL=<world units> (default 8). */
+/* Stream upload ring. glBufferData(.., GL_STREAM_DRAW) per draw makes some GL drivers (Adreno in
+ * particular) allocate and free GPU memory on every call - measured as most of a heavy frame's CPU time
+ * on a phone (mmap/munmap and page-fault churn). Instead the vertex VBO is allocated once per frame
+ * and each draw is written at the next stride-aligned offset and drawn with a first-vertex index. */
+static size_t gl_stream_off;  /* bytes used so far this frame */
+static size_t gl_stream_cap;  /* bytes allocated (0 = orphan on the next upload) */
+static size_t gl_stream_peak; /* the busiest frame so far, to size the next allocation */
+
+static GLint gl_stream_upload(const float* data, size_t nfloats, size_t stride_floats) {
+    const size_t bytes = nfloats * sizeof(float);
+    const size_t stride = stride_floats * sizeof(float);
+    size_t off = (gl_stream_off + stride - 1) / stride * stride;
+    if (gl_stream_cap == 0 || off + bytes > gl_stream_cap) {
+        size_t want = gl_stream_peak + gl_stream_peak / 4 + bytes;
+        if (want < ((size_t)4u << 20)) {
+            want = (size_t)4u << 20;
+        }
+        gl_stream_cap = want;
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)gl_stream_cap, NULL, GL_STREAM_DRAW); /* orphan: a fresh block, no stall */
+        off = 0;
+    }
+    glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)off, (GLsizeiptr)bytes, data);
+    gl_stream_off = off + bytes;
+    if (gl_stream_off > gl_stream_peak) {
+        gl_stream_peak = gl_stream_off;
+    }
+    return (GLint)(off / stride);
+}
+
 extern float gfx_ge_dec_b, gfx_ge_dec_d;
 static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris) {
     // printf("flushing %d tris\n", buf_vbo_num_tris);
@@ -1303,8 +1343,15 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
     }
     gl_ret_restore(); /* after a retained draw: the stream VBO + this program's arrays again */
     if (!clip || !ge_dec_draw || gfx_ge_dec_b >= 0.0f || buf_vbo_num_tris == 0) {
+        const size_t nvs = 3 * buf_vbo_num_tris;
+        if (nvs != 0 && buf_vbo_len % nvs == 0) {
+            const GLint first = gl_stream_upload(buf_vbo, buf_vbo_len, buf_vbo_len / nvs);
+            glDrawArrays(GL_TRIANGLES, first, (GLsizei)nvs);
+            return;
+        }
         glBufferData(GL_ARRAY_BUFFER, sizeof(float) * buf_vbo_len, buf_vbo, GL_STREAM_DRAW);
         glDrawArrays(GL_TRIANGLES, 0, 3 * buf_vbo_num_tris);
+        gl_stream_cap = 0; /* the ring's block was replaced */
         return;
     }
 
@@ -1334,22 +1381,22 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
     glDisable(GL_POLYGON_OFFSET_FILL);
     glStencilFunc(GL_ALWAYS, 1, 0xFF);
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * buf_vbo_len, pushed.data(), GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, nv);
+    const GLint first1 = gl_stream_upload(pushed.data(), buf_vbo_len, stride);
+    glDrawArrays(GL_TRIANGLES, first1, (GLsizei)nv);
     /* 2. draw */
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     gfx_opengl_set_depth_mode(ge_dm_args[0], ge_dm_args[1], ge_dm_args[2], ge_dm_args[3], ge_dm_zmode);
     glStencilFunc(GL_EQUAL, 1, 0xFF);
     glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * buf_vbo_len, buf_vbo, GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, nv);
+    const GLint first2 = gl_stream_upload(buf_vbo, buf_vbo_len, stride);
+    glDrawArrays(GL_TRIANGLES, first2, (GLsizei)nv);
     /* 3. clear */
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_ALWAYS);
     glStencilFunc(GL_ALWAYS, 0, 0xFF);
     glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
-    glDrawArrays(GL_TRIANGLES, 0, nv);
+    glDrawArrays(GL_TRIANGLES, first2, (GLsizei)nv);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_STENCIL_TEST);
     gfx_opengl_set_depth_mode(ge_dm_args[0], ge_dm_args[1], ge_dm_args[2], ge_dm_args[3], ge_dm_zmode);
@@ -1602,11 +1649,116 @@ static void gfx_opengl_init(void) {
 static void gfx_opengl_on_resize(void) {
 }
 
+/* GPU frame time (stats line "gpu"): a GL_TIME_ELAPSED query around each frame's draws, read back a
+ * couple of frames later so it never stalls. ES needs GL_EXT_disjoint_timer_query; with the extension
+ * absent (or a disjoint event) the stats line just reads gpu0.0. */
+extern "C" unsigned long long g_PortGpuUs = 0;
+extern "C" unsigned g_PortGpuFrames = 0;
+
+namespace {
+constexpr unsigned GPUQ_RING = 4;
+constexpr unsigned GPUQ_TIME_ELAPSED = 0x88BF; /* GL_TIME_ELAPSED(_EXT) */
+constexpr unsigned GPUQ_RESULT = 0x8866;       /* GL_QUERY_RESULT */
+constexpr unsigned GPUQ_RESULT_AVAILABLE = 0x8867;
+constexpr unsigned GPUQ_GPU_DISJOINT = 0x8FBB; /* GL_GPU_DISJOINT_EXT */
+typedef void (APIENTRY *gpuq_gen_fn)(int, unsigned*);
+typedef void (APIENTRY *gpuq_begin_fn)(unsigned, unsigned);
+typedef void (APIENTRY *gpuq_end_fn)(unsigned);
+typedef void (APIENTRY *gpuq_get64_fn)(unsigned, unsigned, unsigned long long*);
+typedef void (APIENTRY *gpuq_getiv_fn)(unsigned, unsigned, int*);
+gpuq_gen_fn gpuq_gen;
+gpuq_begin_fn gpuq_begin;
+gpuq_end_fn gpuq_end;
+gpuq_get64_fn gpuq_get64;
+gpuq_getiv_fn gpuq_getiv;
+unsigned gpuq_ids[GPUQ_RING];
+bool gpuq_pending[GPUQ_RING];
+unsigned gpuq_head; /* next slot to begin */
+unsigned gpuq_tail; /* oldest slot still pending */
+int gpuq_state = -1; /* -1 untried, 0 unavailable, 1 ready */
+bool gpuq_open;
+
+void gpuq_init(void) {
+    gpuq_state = 0;
+    const char* ext = (const char*)glGetString(GL_EXTENSIONS);
+    const bool has = gl_es ? (ext != NULL && strstr(ext, "GL_EXT_disjoint_timer_query") != NULL)
+                           : (ext != NULL && strstr(ext, "GL_ARB_timer_query") != NULL);
+    if (!has && !(!gl_es && ext == NULL)) {
+        return;
+    }
+    const char* sfx = gl_es ? "EXT" : "";
+    char name[64];
+    SDL_snprintf(name, sizeof(name), "glGenQueries%s", sfx);
+    gpuq_gen = (gpuq_gen_fn)SDL_GL_GetProcAddress(name);
+    SDL_snprintf(name, sizeof(name), "glBeginQuery%s", sfx);
+    gpuq_begin = (gpuq_begin_fn)SDL_GL_GetProcAddress(name);
+    SDL_snprintf(name, sizeof(name), "glEndQuery%s", sfx);
+    gpuq_end = (gpuq_end_fn)SDL_GL_GetProcAddress(name);
+    SDL_snprintf(name, sizeof(name), "glGetQueryObjectui64v%s", sfx);
+    gpuq_get64 = (gpuq_get64_fn)SDL_GL_GetProcAddress(name);
+    SDL_snprintf(name, sizeof(name), "glGetQueryObjectiv%s", sfx);
+    gpuq_getiv = (gpuq_getiv_fn)SDL_GL_GetProcAddress(name);
+    if (!gpuq_gen || !gpuq_begin || !gpuq_end || !gpuq_get64 || !gpuq_getiv) {
+        return;
+    }
+    gpuq_gen((int)GPUQ_RING, gpuq_ids);
+    gpuq_state = 1;
+}
+
+void gpuq_frame_begin(void) {
+    if (gpuq_state < 0) {
+        gpuq_init();
+    }
+    if (gpuq_state != 1 || gpuq_open || gpuq_head - gpuq_tail >= GPUQ_RING) {
+        return;
+    }
+    gpuq_begin(GPUQ_TIME_ELAPSED, gpuq_ids[gpuq_head % GPUQ_RING]);
+    gpuq_open = true;
+}
+
+void gpuq_frame_end(void) {
+    if (gpuq_state != 1) {
+        return;
+    }
+    if (gpuq_open) {
+        gpuq_end(GPUQ_TIME_ELAPSED);
+        gpuq_pending[gpuq_head % GPUQ_RING] = true;
+        gpuq_head++;
+        gpuq_open = false;
+    }
+    while (gpuq_tail != gpuq_head) {
+        const unsigned slot = gpuq_tail % GPUQ_RING;
+        int avail = 0;
+        gpuq_getiv(gpuq_ids[slot], GPUQ_RESULT_AVAILABLE, &avail);
+        if (!avail) {
+            break;
+        }
+        unsigned long long ns = 0;
+        gpuq_get64(gpuq_ids[slot], GPUQ_RESULT, &ns);
+        gpuq_pending[slot] = false;
+        gpuq_tail++;
+        if (gl_es) {
+            int disjoint = 0;
+            glGetIntegerv(GPUQ_GPU_DISJOINT, &disjoint); /* also clears the flag */
+            if (disjoint) {
+                continue;
+            }
+        }
+        g_PortGpuUs += ns / 1000ull;
+        g_PortGpuFrames++;
+    }
+}
+} // namespace
+
 static void gfx_opengl_start_frame(void) {
     frame_count++;
+    gl_stream_off = 0;
+    gl_stream_cap = 0; /* orphan on the first draw: no stall on blocks the GPU may still read */
+    gpuq_frame_begin();
 }
 
 static void gfx_opengl_end_frame(void) {
+    gpuq_frame_end();
     glFlush();
 }
 

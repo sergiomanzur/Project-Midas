@@ -112,6 +112,14 @@ android {
                 signingConfig signingConfigs.release
             }
         }
+        // Profiling build: the release (-O2) engine, but the app is debuggable so `adb run-as`
+        // can edit midas.ini and read files on a device. Not for distribution.
+        perf {
+            initWith release
+            debuggable true
+            jniDebuggable false
+            matchingFallbacks = ["release"]
+        }
     }
 
     packaging {

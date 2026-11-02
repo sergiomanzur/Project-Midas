@@ -2476,7 +2476,8 @@ void proplvreset2(enum LEVELID stageId)
 #else
                 {
                     static s32 said;
-                    if (said < 8) {
+                    extern char *getenv(const char *);
+                    if (said < (getenv("GE_PADLOG") != NULL ? 1000 : 8)) { /* GE_PADLOG=1: every pad (position sweeps) */
                         extern void portConLogf(const char *fmt, ...);
                         said++;
                         portConLogf("ge: pad[%d] pad=%p plink=%p stan=%p pos=%g,%g,%g base=%p\n",

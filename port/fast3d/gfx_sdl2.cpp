@@ -844,7 +844,13 @@ static inline void sync_framerate_with_timer(void) {
     const int64_t next = previous_time + 10 * FRAME_INTERVAL_US_NUMERATOR / FRAME_INTERVAL_US_DENOMINATOR;
     int64_t left = next - t;
     // We want to exit a bit early, so we can busy-wait the rest to never miss the deadline
+#ifdef __ANDROID__
+    /* nanosleep wakes within ~0.1 ms here (Windows Sleep needs 1.5 ms of margin), so busy-wait much less:
+     * the spin burns a big core for nothing and heats a handheld */
+    left -= 5000UL;
+#else
     left -= 15000UL;
+#endif
     if (left > 0) {
         sysSleep(left);
     }
@@ -956,6 +962,10 @@ extern "C" unsigned int g_PortGfxDraws;
 extern "C" unsigned int g_PortRaphnetPolls;
 extern "C" int32_t portTickHz(void);
 extern "C" int32_t g_PortStatFps; /* frametiming.c; show_fps overlay reads */
+extern "C" unsigned long long g_PortGpuUs; /* gfx_opengl.cpp: GPU time of the frames measured */
+extern "C" unsigned g_PortGpuFrames;
+extern "C" unsigned g_PortTexUploads;                /* gfx_opengl.cpp: textures uploaded since start */
+extern "C" unsigned long long g_PortTexUploadBytes;
 extern "C" int32_t g_PortStatTps;
 /* swap_buffers_begin: time in the maxfps limiter / in SDL_GL_SwapWindow */
 static unsigned long long stat_limit_us = 0;
@@ -975,6 +985,10 @@ static void gfx_sdl_update_title_stats(void) {
     static unsigned int stat_last_rn = 0;
     static unsigned long long stat_last_limus = 0;
     static unsigned long long stat_last_swpus = 0;
+    static unsigned long long stat_last_gpuus = 0;
+    static unsigned stat_last_gpufr = 0;
+    static unsigned stat_last_texn = 0;
+    static unsigned long long stat_last_texb = 0;
     uint32_t now = SDL_GetTicks();
 
     /* The log line lands every ~10s but the averages above it cover only the
@@ -1006,6 +1020,10 @@ static void gfx_sdl_update_title_stats(void) {
         stat_last_rn = g_PortRaphnetPolls;
         stat_last_limus = stat_limit_us;
         stat_last_swpus = stat_swap_us;
+        stat_last_gpuus = g_PortGpuUs;
+        stat_last_gpufr = g_PortGpuFrames;
+        stat_last_texn = g_PortTexUploads;
+        stat_last_texb = g_PortTexUploadBytes;
         return;
     }
     if (now - stat_last_ms >= 500) {
@@ -1028,6 +1046,12 @@ static void gfx_sdl_update_title_stats(void) {
         int limms10 = (int)(((stat_limit_us - stat_last_limus) * 10) / (1000ull * frames));
         int swpms10 = (int)(((stat_swap_us - stat_last_swpus) * 10) / (1000ull * frames));
         int draws = (int)((g_PortGfxDraws - stat_last_draws) / frames);
+        /* gpu = measured GPU ms per frame (GL timer query; 0 when the driver has none) */
+        const unsigned gpufr = g_PortGpuFrames - stat_last_gpufr;
+        int gpums10 = gpufr ? (int)(((g_PortGpuUs - stat_last_gpuus) * 10) / (1000ull * gpufr)) : 0;
+        /* tex = texture uploads per second and the KB/s they carry (a thrashing texture cache shows here) */
+        const int texps = (int)(((g_PortTexUploads - stat_last_texn) * 1000ull) / (dt ? dt : 1));
+        const int texkbps = (int)((((g_PortTexUploadBytes - stat_last_texb) / 1024ull) * 1000ull) / (dt ? dt : 1));
         int rnhz = (int)(((g_PortRaphnetPolls - stat_last_rn) * 1000 + dt / 2) / dt);
         g_PortStatFps = fps;
         g_PortStatTps = tps;
@@ -1035,11 +1059,11 @@ static void gfx_sdl_update_title_stats(void) {
         int joyms10 = (int)(((g_PortJoyUs - stat_last_joyus) * 10) / (1000ull * frames));
         int pmpms10 = (int)(((g_PortPumpUs - stat_last_pmpus) * 10) / (1000ull * frames));
         SDL_snprintf(title, sizeof(title),
-                     "ge007 | %dfps %dtps | tick%d pump%d | idle%d%% gl%d.%d lim%d.%d swp%d.%d | pmp%d.%d joy%d.%d aud%d.%d | draws %d rn%dHz",
+                     "ge007 | %dfps %dtps | tick%d pump%d | idle%d%% gl%d.%d gpu%d.%d lim%d.%d swp%d.%d | pmp%d.%d joy%d.%d aud%d.%d | draws %d tex %d/s %dKB/s rn%dHz",
                      fps, tps, (int)portTickHz(), pump, idle,
-                     glms10 / 10, glms10 % 10, limms10 / 10, limms10 % 10,
+                     glms10 / 10, glms10 % 10, gpums10 / 10, gpums10 % 10, limms10 / 10, limms10 % 10,
                      swpms10 / 10, swpms10 % 10, pmpms10 / 10, pmpms10 % 10,
-                     joyms10 / 10, joyms10 % 10, audms10 / 10, audms10 % 10, draws, rnhz);
+                     joyms10 / 10, joyms10 % 10, audms10 / 10, audms10 % 10, draws, texps, texkbps, rnhz);
         /* Title-bar stats are opt-in (GE_TITLESTATS=1) to keep the title clean
          * for recording. The numbers still feed the in-game
          * show_fps overlay via g_PortStatFps/Tps above. */
@@ -1064,10 +1088,10 @@ static void gfx_sdl_update_title_stats(void) {
                 const uint32_t ldt = (stat_log_ms != 0 && now > stat_log_ms) ? now - stat_log_ms : dt;
                 const unsigned int nev = (unsigned int) SDL_AtomicSet(&stat_events, 0);
                 const unsigned int nmouse = (unsigned int) SDL_AtomicSet(&stat_mouse_events, 0);
-                printf("ge: stats: %s | since last: min %dfps worst %d.%dms | ev %u/s mouse %u/s\n", title + 8,
+                fprintf(stderr, "ge: stats: %s | since last: min %dfps worst %d.%dms | ev %u/s mouse %u/s\n", title + 8,
                        stat_min_fps, (int)(stat_worst_us / 1000), (int)((stat_worst_us % 1000) / 100),
                        (unsigned)((uint64_t)nev * 1000 / ldt), (unsigned)((uint64_t)nmouse * 1000 / ldt));
-                fflush(stdout);
+                fflush(stderr);
                 sysLogPowerIfChanged();
                 stat_log_ms = now;
                 stat_min_fps = 0x7fffffff;
@@ -1087,6 +1111,10 @@ static void gfx_sdl_update_title_stats(void) {
         stat_last_rn = g_PortRaphnetPolls;
         stat_last_limus = stat_limit_us;
         stat_last_swpus = stat_swap_us;
+        stat_last_gpuus = g_PortGpuUs;
+        stat_last_gpufr = g_PortGpuFrames;
+        stat_last_texn = g_PortTexUploads;
+        stat_last_texb = g_PortTexUploadBytes;
     }
 }
 
