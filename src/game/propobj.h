@@ -67,6 +67,7 @@ extern ExplosionDetailsRecord object_explosion_details[];
  */
 void                 sub_GAME_7F04F218(struct PropRecord *arg0, s32 arg1);
 
+void                 objFree(struct ObjectRecord *obj, s32 freeprop, s32 canregen);
 void                 objFreePermanently(struct ObjectRecord *obj, bool freeprop);
 
 void                 chrobjApplySpeed(f32 *openPosition, f32 maxFrac, f32 *speedPtr, f32 accel, f32 decel, f32 maxSpeed);

@@ -2050,6 +2050,9 @@ typedef enum MPSCENARIOS
     SCENARIO_2v2,
     SCENARIO_3v1,
     SCENARIO_2v1,
+#ifdef GE_MODDED_CHEATS
+    SCENARIO_COOP, /* simulants: reserved, campaign co-op is not part of this port */
+#endif
     MPSCENARIOS_MAX
 } MPSCENARIOS;
 

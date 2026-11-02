@@ -236,7 +236,7 @@ Gfx *sub_GAME_7F007F30(Gfx *gdl, s32 count, Mtxf *matrix)
             if (gunbarrelTimer == BOND_EYE_ANIM_START)
             {
                 // Terrible memory read that might just freeze the game. Fixed so it wouldn't happen anymore.
-                modelSetAnimation(chrModelInstance, (struct ModelAnimation *) (PTR_ANIM_bond_eye_fire + (s32) &ptr_animation_table->data), 0, 2.0f, 0.910000026f, 16.0f);
+                modelSetAnimation(chrModelInstance, (struct ModelAnimation *) (PTR_ANIM_bond_eye_fire + (intptr_t)&ptr_animation_table->data), 0, 2.0f, 0.910000026f, 16.0f);
             }
 
             if (gunbarrelTimer == BOND_EYE_ANIM_SPEEDUP)
@@ -660,7 +660,7 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
     modelSetAnimPlaySpeed(chrModelInstance, S_7F008E80_ANIM_SPEED, 0.0f);
 #undef S_7F008E80_ANIM_SPEED
     
-    animation = (struct ModelAnimation*)((s32)ptr_animation_table + PTR_ANIM_bond_eye_walk);
+    animation = (struct ModelAnimation*)((intptr_t)ptr_animation_table + PTR_ANIM_bond_eye_walk);
     startframe = animation->unk04 - 0x44;
     while (startframe < 0) // Very dangerous, can cause infinite loops
     {

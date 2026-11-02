@@ -36,6 +36,10 @@
 #include "objective_status.h"
 #include "stan.h"
 #include "tex.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#include "mprules.h"
+#endif
 
 
 // bss
@@ -1707,6 +1711,9 @@ void propExecuteTickOperation(PropRecord *prop, TICKOP op)
                 return;
             }
         }
+#ifdef GE_MODDED_CHEATS
+        modMpBotsNotifyPropFreed(prop);
+#endif
         chrpropDeregisterRooms(prop);
         chrpropDelist(prop);
         chrpropDisable(prop);
@@ -1871,7 +1878,15 @@ void chrpropTick(void)
     ObjectRecord *setupobj;
 
     // Advance AI states e.g. attacking, walking, dying, etc...
+#ifdef GE_MODDED_CHEATS
+    modMpBotsTick();
+#endif
     chrlvAllChrTick();
+
+#ifdef GE_MODDED_CHEATS
+    /* One post-chr Simulant seam owns heading sync and pickups. */
+    modMpBotsPostChrTick();
+#endif
 
     prop = chrpropGetActiveTail();
 
@@ -2018,7 +2033,7 @@ void chrpropTick(void)
                 // Update MP character bullet tracers.
                 if (prop->chr != NULL)
                 {
-                    if (getPlayerCount() >= 2)
+                    if (MP_RULES())
                     {
                         chr = prop->chr;
                         gunAdvanceBeamTimer(&chr->beams[0]);
@@ -2502,7 +2517,7 @@ f32 chrpropScoreAutoAimTarget(PropRecord *targetprop, coord3d *aimpos, f32 *worl
             {
                 horizontal_tolerance = (screen_right_edge[0] - screen_left_edge[0]) * 1.5f;
 
-                if (getPlayerCount() == 1)
+                if (SP_RULES())
                 {
                     horizontal_tolerance = horizontal_tolerance * difficulty;
                 }

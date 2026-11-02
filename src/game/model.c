@@ -1398,36 +1398,35 @@ void sub_GAME_7F06DB5C(ModelRenderData *arg0, Model *arg1, ModelNode *arg2, quat
     s32 sp4C;
     RenderPosView *sp48;
     s32 sp44;
-    s32 *new_var;
+    ModelNode *new_var;
     s32 sp40;
     quatf sp2C;
     Mtxf *sp28;
     f32 sp24;
     s32 _gap20;
-    s32 sp1C;
+    Mtxf *sp1C;
 
     spA4 = arg2->Opcode;
     spA0 = (ModelRoData_GroupRecord *)arg2->Data;
     sp54 = spA0->MatrixID0;
     sp50 = spA0->MatrixID1;
     sp4C = spA0->MatrixID2;
-    new_var = &sp1C;
     sp48 = arg1->render_pos;
-    sp1C = (s32)arg2->Parent;
+    new_var = arg2->Parent;
 
-    if (*new_var != 0) {
+    if (new_var != NULL) {
         sp9C = arg0->basemtx;
-        sp9C = modelFindNodeMtx(arg1, (ModelNode *)sp1C, 0);
+        sp9C = modelFindNodeMtx(arg1, new_var, 0);
     } else {
         sp9C = arg0->basemtx;
     }
 
     if (sp9C != 0) {
         quaternion_to_transform_matrix(&spA0->Origin, arg3, &sp58);
-        sp1C = (s32)&sp48[sp54];
-        matrix_4x4_multiply_homogeneous(sp9C, &sp58, (Mtxf *)sp1C);
+        sp1C = (Mtxf *)&sp48[sp54];
+        matrix_4x4_multiply_homogeneous(sp9C, &sp58, sp1C);
         if (g_ModelJointPositionedFunc != NULL) {
-            ((void (*)(s32, s32, s32)) g_ModelJointPositionedFunc)(sp54, sp1C, sp1C);
+            g_ModelJointPositionedFunc(sp54, sp1C);
         }
     } else {
         quaternion_to_transform_matrix(&spA0->Origin, arg3, (Mtxf *)&sp48[sp54]);

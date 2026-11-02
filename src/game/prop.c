@@ -32,6 +32,11 @@
 #include "stan.h"
 #include "model.h"
 #include "token.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#include "front.h"
+#include "mprules.h"
+#endif
 
 /**
  * EU .bss 0x80068480
@@ -183,7 +188,7 @@ void domakedefaultobj(s32 arg0, ObjectRecord *arg1, s32 cmdindex)
 
     arg1->damage = *(s32*)&arg1->damage / 65536.0f;
 
-    if (getPlayerCount() >= 2)
+    if (MP_RULES())
     {
         sp74 = 1;
 
@@ -598,7 +603,8 @@ void weaponAssignToHome(s32 arg0, WeaponObjRecord* weapon, s32 cmdindex)
 
 #ifdef PORT_LP64
             extern s32 g_portSetupFromRom;
-            if (g_portSetupFromRom)
+            extern s32 g_portPropdefsHost;
+            if (g_portSetupFromRom && !g_portPropdefsHost)
             {
                 /* PORT: the setup record is the 0x88-byte N64 layout (prop/model/mtx/... are
                  * 4-byte words), but WeaponObjRecord is the wider host struct, so weaponnum
@@ -639,7 +645,7 @@ void weaponAssignToHome(s32 arg0, WeaponObjRecord* weapon, s32 cmdindex)
         hastoken = 1;
         giveweapon = 1;
 
-        if (getPlayerCount() >= 2)
+        if (MP_RULES())
         {
             lastmpweaponnum = -1;
 
@@ -996,7 +1002,7 @@ void setupSingleMonitor(s32 stageID, MonitorObjRecord *monitor, s32 cmdindex)
         scale = monitor->extrascale * (1.0f / 256.0f);
         monitor->damage = *(s32*)&monitor->damage / M_U16_MAX_VALUE_F;
 
-        if (getPlayerCount() >= 2)
+        if (MP_RULES())
         {
             monitor->state |= PROPSTATE_RESPAWN;
         }
@@ -1500,6 +1506,7 @@ void setupDoor(s32 arg0, struct DoorRecord *door, s32 arg2)
 /* ROM loading (port/src/romfile_setup.c): a setup loaded from the ROM is the
  * N64 image (offsets), so it uses the N64 promotion. Set right after the file loads, below. */
 s32 g_portSetupFromRom;
+s32 g_portPropdefsHost; /* LP64: g_CurrentSetup.propDefs is the expanded host-layout copy (lp64_setup.c) */
 s32 g_portNumWaypoints; /* PORT: waypoints in the host table (0 = compiled setup) */
 s32 g_portNumWaygroups;
 #define SETUP_PROMOTE(base, val) (g_portSetupFromRom ? (void *) ((uintptr_t) (base) + (u32) (val)) : (void *) (uintptr_t) (val))
@@ -1986,7 +1993,7 @@ void proplvreset2(enum LEVELID stageId)
          * There are no slots for the mp stages in setup_text_pointers. The name
          * is created by adding "mp_" after the "U" e.g. "Ump_setuparchZ"
          */
-        if (getPlayerCount() >= 2)
+        if (MP_RULES())
         {
             strcat(strResource, "mp_"); // -> "Ump_"
         }
@@ -2000,6 +2007,7 @@ void proplvreset2(enum LEVELID stageId)
         {
             extern s32 romdataFileServed(s32 index);
             g_portSetupFromRom = romdataFileServed(fileGetIndex((u8 *) strResource));
+            g_portPropdefsHost = 0;
         }
 #endif
         local_stage = g_ptrStageSetupFile;
@@ -2309,6 +2317,22 @@ void proplvreset2(enum LEVELID stageId)
                 }
             }
         }
+#ifdef PORT_LP64
+        if (g_portSetupFromRom)
+        {
+            /* PORT: the setup's records are N64-layout words (4-byte pointers); expand them to
+             * the host structs now that their bytes are fixed, and step by host strides from
+             * here on (sizepropdef). */
+            extern u32 *portSetupExpandPropdefs(const u32 *wire);
+            u32 *expanded = portSetupExpandPropdefs((const u32 *) g_CurrentSetup.propDefs);
+
+            if (expanded != NULL)
+            {
+                g_CurrentSetup.propDefs = (PropDefHeaderRecord *) expanded;
+                g_portPropdefsHost = 1;
+            }
+        }
+#endif
 #endif
 
         // Pad names and bound names are optional. An offset of 0 means absent.
@@ -2452,7 +2476,8 @@ void proplvreset2(enum LEVELID stageId)
 #else
                 {
                     static s32 said;
-                    if (said < 8) {
+                    extern char *getenv(const char *);
+                    if (said < (getenv("GE_PADLOG") != NULL ? 1000 : 8)) { /* GE_PADLOG=1: every pad (position sweeps) */
                         extern void portConLogf(const char *fmt, ...);
                         said++;
                         portConLogf("ge: pad[%d] pad=%p plink=%p stan=%p pos=%g,%g,%g base=%p\n",
@@ -2537,6 +2562,11 @@ void proplvreset2(enum LEVELID stageId)
 
         // PD rejoins here
 
+#ifdef GE_MODDED_CHEATS
+        /* The bot count sizes the chr and animated-model pools just below. */
+        modMpBotsApplyPortSettings();
+#endif
+
         if (withchrs)
         {
             alloc_init_GUARDdata_entries(load_proptype(PROPDEF_GUARD));
@@ -2574,6 +2604,15 @@ void proplvreset2(enum LEVELID stageId)
             numAnimatedObjects += load_proptype(PROPDEF_AIRCRAFT);
         }
 
+#ifdef GE_MODDED_CHEATS
+        /* Two exact-sized animated model instances per Simulant: one living
+         * bot and one corpse that can overlap its respawn. */
+        if (gamemode == GAMEMODE_MULTI)
+        {
+            numAnimatedObjects += modMpBotsGetCount() * 2;
+        }
+#endif
+
         modelmgrAllocateModelSlots(numObjects);
         modelmgrAllocateAnimModelSlots(numAnimatedObjects);
 
@@ -2599,7 +2638,7 @@ void proplvreset2(enum LEVELID stageId)
              * - don't load on 4 players
              * - don't load in multiplayer
              */
-            if (getPlayerCount() >= 2)
+            if (MP_RULES())
             {
                 flags |= 1 << (getPlayerCount() + 20);
             }
@@ -2783,7 +2822,7 @@ void proplvreset2(enum LEVELID stageId)
                         s32 ammoqty = 1;
                         s32 i9;
 
-                        if (getPlayerCount() >= 2)
+                        if (MP_RULES())
                         {
                             struct s_mp_weapon_set *mpweapon = &getPtrMPWeaponSetData()[lastmpweaponnum];
                             

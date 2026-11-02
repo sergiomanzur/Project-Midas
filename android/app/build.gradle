@@ -66,8 +66,8 @@ android {
         minSdk 26
         targetSdk 34
         // 2: the universal (arm64-v8a + armeabi-v7a) rebuild of 1.0.1.
-        versionCode 2
-        versionName "1.0.2-android"
+        versionCode 3
+        versionName "1.1.0-android"
 
         // SDL2 and the game are both built for the selected ABI(s) by the root
         // CMake project. The default is universal: both ABIs in one APK.
@@ -111,6 +111,14 @@ android {
             if (canSignRelease) {
                 signingConfig signingConfigs.release
             }
+        }
+        // Profiling build: the release (-O2) engine, but the app is debuggable so `adb run-as`
+        // can edit midas.ini and read files on a device. Not for distribution.
+        perf {
+            initWith release
+            debuggable true
+            jniDebuggable false
+            matchingFallbacks = ["release"]
         }
     }
 

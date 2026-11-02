@@ -109,6 +109,13 @@ s32 stanTileDistanceRelated(struct StandTile **arg0, f32 arg1, f32 arg2, f32 arg
 s32 stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0);
 s32 stanGetLocusCount(struct StandTileLocusCallbackRecord *arg0);
 f32 distBetweenPoints2d(f32 o_x,f32 o_z,f32 p_x,f32 p_z);
+void getTileMidPoint(StandTile *tile, coord3d *out);
+#ifdef GE_MODDED_CHEATS
+s32 stanGetTilePointCount(StandTile *tile);
+StandTile *stanGetLinkedTileAtEdge(StandTile *tile, s32 edgeIndex);
+s32 stanGetEdgeMidPointWorld(StandTile *tile, s32 edgeIndex, coord3d *out, f32 *width);
+f32 stanGetTileCenterClearanceWorld(StandTile *tile);
+#endif
 bool stanPointProjectsOntoEdge(f32 x1, f32 z1, f32 x2, f32 z2, f32 x3, f32 z3);
 f32 stanGetSignedPointLineDistance(f32 x1, f32 z1, f32 x2, f32 z2, f32 x3, f32 z3);
 void stanGetMoveBondCollisionTiles(StandTile **tile1, StandTile **tile2, coord3d *coords);

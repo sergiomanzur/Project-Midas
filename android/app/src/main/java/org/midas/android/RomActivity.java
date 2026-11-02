@@ -527,6 +527,16 @@ public class RomActivity extends Activity {
         if (stage != null) {
             intent.putExtra("ge_stage", stage);
         }
+        /* ...and every other engine test variable (--es ge_mp temple, --es ge_drive 1, ...). */
+        android.os.Bundle extras = getIntent().getExtras();
+        if (extras != null) {
+            for (String extra : extras.keySet()) {
+                String value = extras.get(extra) instanceof String ? (String) extras.get(extra) : null;
+                if (extra.startsWith("ge_") && value != null) {
+                    intent.putExtra(extra, value);
+                }
+            }
+        }
         startActivity(intent);
     }
 

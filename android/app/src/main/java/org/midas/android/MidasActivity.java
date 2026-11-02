@@ -46,6 +46,23 @@ public class MidasActivity extends SDLActivity {
             }
         }
 
+        /* Same hook for every other engine test variable: an extra named ge_xxx becomes the
+         * environment variable GE_XXX (--es ge_mp temple --es ge_mpplayers 1, --es ge_drive 1,
+         * --es ge_spawnxyz "x,y,z", ...). */
+        android.os.Bundle extras = getIntent() != null ? getIntent().getExtras() : null;
+        if (extras != null) {
+            for (String extra : extras.keySet()) {
+                Object value = extras.get(extra);
+                if (extra.startsWith("ge_") && !extra.equals("ge_stage") && value instanceof String) {
+                    try {
+                        SDLActivity.nativeSetenv(extra.toUpperCase(java.util.Locale.ROOT), (String) value);
+                    } catch (Throwable ignored) {
+                        // Not fatal: the game just starts at the normal menu.
+                    }
+                }
+            }
+        }
+
         if (!hasRom) {
             // The launcher normally prevents this. If the game activity is
             // restored after its data was cleared, go back to the importer

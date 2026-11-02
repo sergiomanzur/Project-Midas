@@ -132,6 +132,11 @@ static int s_CfgMpRandomSpawns = 0; /* [display] mp_random_spawns: each spawn se
 static int s_CfgMpHeadRoll = 1;     /* [display] mp_head_roll: the camera rolls with the head, 2+ players (no_head_roll is solo's) */
 static int s_CfgMpUnlimitedExplosions = 1; /* [display] mp_unlimited_explosions: 100 live explosions, not 6, 2+ players (explosion.c) */
 static int s_CfgUnlimitedExplosions = 1;   /* [display] unlimited_explosions: the same, solo (Port Options, default ON) */
+/* Simulants (multiplayer bots), ported from GoldenEye 007 Plus. */
+static int s_CfgMpBots = 0;          /* [display] mp_bots: 0..8 computer players in a multiplayer match */
+static int s_CfgMpBotDifficulty = 2; /* [display] mp_bot_difficulty: 0 Very Easy .. 5 Extreme (mpbots.c) */
+/* Camera: 0 first person, 1..3 third person (a behind-the-player camera in every mode). */
+static int s_CfgCameraView = 0;      /* [display] camera_view: 0 First Person, 1 Third Person Close, 2 Third Person Shoulder, 3 Third Person Far */
 static int s_CfgWatchStatic = 1;
 static int s_CfgMouseAutoAim = 0;   /* [display] mouse_auto_aim: 1 lets a mouse player use Auto-Aim (default: never) */
 /* Classic Mode's NTSC composite filter (gfx_opengl.cpp vi_prog[3]) is a Classic
@@ -167,6 +172,7 @@ static int s_CfgRoomCache = 2;        /* [display] room_cache: 0 off, 1 CPU
                                        * replay, 2 GPU-retained rooms + model
                                        * parts (gfx_roomcache.inl) */
 #else
+static int s_RoomCacheExplicit = 0;   /* midas.ini or GE_ROOMCACHE named a room_cache: the Android auto default stands down */
 static int s_CfgRoomCache = 0;        /* PC: 2 = the GL retained path
                                        * (gfx_opengl.cpp retained_*), off by
                                        * default on PC */
@@ -1047,7 +1053,7 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "mipmaps") == 0
         || SDL_strcasecmp(key, "hw_mipmaps") == 0) { s_CfgMipmaps = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "n64_aa") == 0)        { s_CfgN64Aa = SDL_atoi(value) != 0; return 1; }
-    if (SDL_strcasecmp(key, "room_cache") == 0)    { s_CfgRoomCache = SDL_atoi(value); if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0; if (s_CfgRoomCache == 0) { s_RoomCacheBeforeHw = 0; /* room_cache: an explicit 0 is not put back */ } if (s_CfgTickHz == -1 && s_CfgRoomCache != 0) { portConLogf("ge: video: tickhz=hw - room_cache forced 0\n"); s_RoomCacheBeforeHw = s_CfgRoomCache; s_CfgRoomCache = 0; } portRoomCacheSetMode(s_CfgRoomCache); return 1; }
+    if (SDL_strcasecmp(key, "room_cache") == 0)    { s_RoomCacheExplicit = 1; s_CfgRoomCache = SDL_atoi(value); if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0; if (s_CfgRoomCache == 0) { s_RoomCacheBeforeHw = 0; /* room_cache: an explicit 0 is not put back */ } if (s_CfgTickHz == -1 && s_CfgRoomCache != 0) { portConLogf("ge: video: tickhz=hw - room_cache forced 0\n"); s_RoomCacheBeforeHw = s_CfgRoomCache; s_CfgRoomCache = 0; } portRoomCacheSetMode(s_CfgRoomCache); return 1; }
 #ifdef GE_XBOX
     if (SDL_strcasecmp(key, "xbox_mode") == 0)
     {
@@ -1208,6 +1214,9 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "mp_random_spawns") == 0) { s_CfgMpRandomSpawns = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "mp_head_roll") == 0)  { s_CfgMpHeadRoll = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "mp_unlimited_explosions") == 0) { s_CfgMpUnlimitedExplosions = SDL_atoi(value) != 0; return 1; }
+    if (SDL_strcasecmp(key, "mp_bots") == 0)       { int v = SDL_atoi(value); s_CfgMpBots = v < 0 ? 0 : (v > 8 ? 8 : v); return 1; }
+    if (SDL_strcasecmp(key, "camera_view") == 0)   { int v = SDL_atoi(value); s_CfgCameraView = v < 0 ? 0 : (v > 3 ? 3 : v); return 1; }
+    if (SDL_strcasecmp(key, "mp_bot_difficulty") == 0) { int v = SDL_atoi(value); s_CfgMpBotDifficulty = v < 0 ? 0 : (v > 5 ? 5 : v); return 1; }
     if (SDL_strcasecmp(key, "unlimited_explosions") == 0) { s_CfgUnlimitedExplosions = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "watch_static") == 0) { s_CfgWatchStatic = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "mouse_auto_aim") == 0) { s_CfgMouseAutoAim = SDL_atoi(value) != 0; return 1; }
@@ -1468,6 +1477,9 @@ s32 portVideoOptionGet(const char *key, s32 *out)
     if (SDL_strcasecmp(key, "mp_random_spawns") == 0) { *out = s_CfgMpRandomSpawns; return 1; }
     if (SDL_strcasecmp(key, "mp_head_roll") == 0)  { *out = s_CfgMpHeadRoll; return 1; }
     if (SDL_strcasecmp(key, "mp_unlimited_explosions") == 0) { *out = s_CfgMpUnlimitedExplosions; return 1; }
+    if (SDL_strcasecmp(key, "mp_bots") == 0)       { *out = s_CfgMpBots; return 1; }
+    if (SDL_strcasecmp(key, "camera_view") == 0)   { *out = s_CfgCameraView; return 1; }
+    if (SDL_strcasecmp(key, "mp_bot_difficulty") == 0) { *out = s_CfgMpBotDifficulty; return 1; }
     if (SDL_strcasecmp(key, "unlimited_explosions") == 0) { *out = s_CfgUnlimitedExplosions; return 1; }
     if (SDL_strcasecmp(key, "watch_static") == 0) { *out = s_CfgWatchStatic; return 1; }
     if (SDL_strcasecmp(key, "mouse_auto_aim") == 0) { *out = s_CfgMouseAutoAim; return 1; }
@@ -2287,6 +2299,9 @@ static void videoWriteDefaultIni(void)
     fprintf(f, "mp_head_roll=%d\n", s_CfgMpHeadRoll);
     fprintf(f, "unlimited_explosions=%d\n", s_CfgUnlimitedExplosions);
     fprintf(f, "mp_unlimited_explosions=%d\n", s_CfgMpUnlimitedExplosions);
+    fprintf(f, "mp_bots=%d\n", s_CfgMpBots);
+    fprintf(f, "camera_view=%d\n", s_CfgCameraView);
+    fprintf(f, "mp_bot_difficulty=%d\n", s_CfgMpBotDifficulty);
     fprintf(f, "watch_static=%d\n", s_CfgWatchStatic);
     fprintf(f, "mouse_auto_aim=%d\n", s_CfgMouseAutoAim);
     fprintf(f, "mp_ltk_health=%d\n", s_CfgMpLtkHealth);
@@ -4831,6 +4846,7 @@ s32 videoInit(void)
         const char *e = getenv("GE_ROOMCACHE");
         if (e != NULL)
         {
+            s_RoomCacheExplicit = 1;
             s_CfgRoomCache = SDL_atoi(e);
             if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0;
             portRoomCacheSetMode(s_CfgRoomCache);
@@ -4842,6 +4858,10 @@ s32 videoInit(void)
             gfx_tri_hoist = s_CfgTriHoist ? 1u : 0u;
         }
         portConLogf("ge: video: room_cache=%d tri_hoist=%d\n", s_CfgRoomCache, s_CfgTriHoist);
+        {
+            extern void portProfSampleInit(void); /* profsample.c: GE_PROFSAMPLE=1 */
+            portProfSampleInit();
+        }
     }
     { /* [display] hw_mipmaps: N64 mip chains on G_TL_LOD draws (reduces Low Res
        * moire). GE_HWMIPMAPS=0/1 overrides the ini for A/B. */
@@ -4898,6 +4918,22 @@ s32 videoInit(void)
 
     SDL_StopTextInput();
 
+#ifdef __ANDROID__
+    {   /* Qualcomm Adreno: the GPU-retained room and model-part cache cuts the render thread's work in
+         * busy scenes by a third to a half (Archives: 14 -> 9 ms a frame, a 50 fps dip back to 60) and
+         * was checked on Adreno 750. Other GL drivers stay on the interpreter until verified; an
+         * explicit room_cache= in midas.ini always wins. */
+        extern int gfx_opengl_renderer_is_adreno(void);
+
+        if (!s_RoomCacheExplicit && s_CfgRoomCache == 0 && s_CfgTickHz != -1 && gfx_opengl_renderer_is_adreno())
+        {
+            s_CfgRoomCache = 2;
+            portRoomCacheSetMode(s_CfgRoomCache);
+            portConLogf("ge: video: Adreno GPU - room_cache defaults to 2 (set room_cache=0 in midas.ini to turn it off)\n");
+        }
+    }
+#endif
+
     portRenderThreadStart(); /* item 15: must be the LAST init step - it moves GL off this thread */
 
     s_VideoInitDone = true;
@@ -4927,6 +4963,10 @@ void videoStartFrame(void)
          * mission ticks alone, so its self-expiring stamp says "a level is
          * rendering". Menu and cutscene frames render at window res (the
          * 640x480 menu mode must never drop to 240 lines). */
+        {
+            extern void portProfSampleTick(void);
+            portProfSampleTick();
+        }
         gfx_low_res = videoRenderLines(y);
         gfx_start_frame();
     }
@@ -5718,6 +5758,15 @@ s32 portExplosionCap(void)
     const s32 on = (getPlayerCount() >= 2) ? s_CfgMpUnlimitedExplosions : s_CfgUnlimitedExplosions;
 
     return (on && get_is_ramrom_flag() == 0) ? 100 : 6;
+}
+
+/** midas.ini [display] camera_view: 0 first person, 1 close / 2 shoulder / 3 far third person.
+ * Demo playback always replays the first-person camera it was recorded with. */
+s32 portCameraView(void)
+{
+    extern s32 get_is_ramrom_flag(void);
+
+    return get_is_ramrom_flag() != 0 ? 0 : s_CfgCameraView;
 }
 
 /** midas.ini [display] mp_friendly_fire: with it off, bondview2.c drops damage

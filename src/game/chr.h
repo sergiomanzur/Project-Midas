@@ -263,6 +263,9 @@ extern struct explosion_death_animation D_8002E648[];
 void        sub_GAME_7F022EE0(s32 param_1);
 void        setanimationdebugflag(s32 param_1);
 void        chrpropCleanupForRemoval(PropRecord* prop);
+#ifdef GE_MODDED_CHEATS
+void        chrpropCleanupForThirdPersonToggle(PropRecord *prop);
+#endif
 void        chrDetectRooms(ChrRecord *);
 void        chrSetMoving(ChrRecord *guard,s32 param_2);
 f32         getAnimationRate(void);
@@ -298,6 +301,10 @@ void        chrCreateBloodStain(Model *arg0, s32 arg1, ModelNode *arg2, struct c
 void        chrpropAddBulletHit(struct ShotData *shotdata, PropRecord *prop, f32 dist, s32 hitpart, ModelNode *node, struct HitThing *hitthing, s32 room, s32 unk44, Model *model, bool countsAsPenetration, s32 blocksFurtherHits);
 void        chrTestHit(PropRecord *prop, ShotData *shotdata);
 void        sub_GAME_7F03E134(PropRecord* p);
+
+#ifdef GE_MODDED_CHEATS
+s32 chrCoopIsEscortCandidate(ChrRecord *chr);
+#endif
 
 #ifdef BUGFIX_R1
 bool chrCanUseDKModeScaling(s32 bodynum, s32 headnum);

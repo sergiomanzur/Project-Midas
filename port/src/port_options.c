@@ -168,6 +168,16 @@ static const char *const sStickSensIni[] = {
 };
 
 
+/* Simulant difficulty: mpbots.c ModMpBotDifficulty, Very Easy to Extreme */
+static const s32 sBotDiffVals[] = { 0, 1, 2, 3, 4, 5 };
+static const char *const sBotDiffText[] = { "Very Easy\n", "Easy\n", "Normal\n", "Hard\n", "Very Hard\n", "Extreme\n" };
+
+
+/* Camera: first person, or one of three third-person cameras (src/game/thirdperson.c) */
+static const s32 sCameraVals[] = { 0, 1, 2, 3 };
+static const char *const sCameraText[] = { "First Person\n", "Third Person Close\n", "Third Person Shoulder\n", "Third Person Far\n" };
+
+
 #define TOGGLE(key, sec, label, cat)                 { key, sec, label, cat, KIND_TOGGLE, 0, 1, 1, "", 0, NULL, NULL, NULL }
 /* a toggle with its own words for off / on (valueText[0], [1]); still a toggle, so on still reads red */
 #define TOGGLET(key, sec, label, cat, text)          { key, sec, label, cat, KIND_TOGGLE, 0, 1, 1, "", 0, NULL, text, NULL }
@@ -250,6 +260,10 @@ static const struct PortOpt sOpts[] = {
     TOGGLE("mp_ltk_health",      "[display]", "LTK Health\n",         PORTOPT_CAT_GAMEPLAY), /* one-hit kills, any scenario */
     TOGGLE("mp_no_armor",        "[display]", "No Armor\n",           PORTOPT_CAT_GAMEPLAY), /* no body armour pickups */
     TOGGLE("mp_friendly_fire",   "[display]", "Friendly Fire\n",      PORTOPT_CAT_GAMEPLAY), /* team-mates can hurt each other */
+    ENUMR ("camera_view",        "[display]", "Camera\n",            PORTOPT_CAT_GAMEPLAY, sCameraVals, sCameraText, NULL),
+    /* Simulants: computer players. Count 0 keeps the match human-only. */
+    INTR  ("mp_bots",            "[display]", "Simulants\n",        PORTOPT_CAT_GAMEPLAY, 0, 8, 1, ""),
+    ENUMR ("mp_bot_difficulty",  "[display]", "Simulant Skill\n",   PORTOPT_CAT_GAMEPLAY, sBotDiffVals, sBotDiffText, NULL),
     TOGGLE("unlimited_explosions", "[display]", "Unlimited Explosions\n", PORTOPT_CAT_GAMEPLAY), /* Port Options; 100 live, not 6 */
     TOGGLE("mouse_auto_aim",     "[display]", "Mouse Auto Aim\n",     PORTOPT_CAT_GAMEPLAY), /* Port Options; off = a mouse player never gets
                                                                                               * Auto-Aim, whatever else says (video.c) */

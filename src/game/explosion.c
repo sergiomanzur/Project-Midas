@@ -11,6 +11,9 @@
 #include "chrai.h"
 #include "chraction.h"
 #include "propobj.h"
+#ifdef GE_MODDED_CHEATS
+#include "mpbots.h"
+#endif
 #include "dyn.h"
 #include "explosion.h"
 #include "fr.h"
@@ -648,7 +651,33 @@ void explosionInflictDamage(PropRecord *arg0, f32 horiz_range, f32 vert_range)
 
                         if (temp_s0->type == PROP_TYPE_CHR)
                         {
+#ifdef GE_MODDED_CHEATS
+                            /* chrlvExplosionDamage credits kills to the current player;
+                             * select the real explosion owner for bookkeeping. */
+                            s32 savedplayer = get_cur_playernum();
+                            s32 ownerplayer = (s32)temp_s2->player;
+
+                            if (modMpBotsFriendlyFireBlocksCoopAlly()
+                                && modMpBotsGetSlotForChr(temp_s0->chr) >= 0
+                                && (u32)ownerplayer < (u32)getPlayerCount())
+                            {
+                                continue;
+                            }
+
+                            if ((u32)ownerplayer < (u32)getPlayerCount())
+                            {
+                                set_cur_player(ownerplayer);
+                            }
+
                             chrlvExplosionDamage(temp_s0->chr, &arg0->pos, minfrac, 1);
+
+                            if (get_cur_playernum() != savedplayer)
+                            {
+                                set_cur_player(savedplayer);
+                            }
+#else
+                            chrlvExplosionDamage(temp_s0->chr, &arg0->pos, minfrac, 1);
+#endif
                         }
                         else
                         {
@@ -660,6 +689,14 @@ void explosionInflictDamage(PropRecord *arg0, f32 horiz_range, f32 vert_range)
                                 xdist *= 1.0f / temp_f2_3;
                                 zdist *= 1.0f / temp_f2_3;
                             }
+
+#ifdef GE_MODDED_CHEATS
+                            if (modMpBotsFriendlyFireBlocksHuman(
+                                    (s32)temp_s2->player, getPlayerPointerIndex(temp_s0)))
+                            {
+                                continue;
+                            }
+#endif
 
                             sp90 = get_cur_playernum();
                             set_cur_player(getPlayerPointerIndex(temp_s0));

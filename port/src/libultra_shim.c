@@ -288,6 +288,12 @@ __attribute__((weak)) s32 portMpFriendlyFireOff(void)
     return 0;
 }
 
+/** Weak default: first-person camera; video.c overrides. */
+__attribute__((weak)) s32 portCameraView(void)
+{
+    return 0;
+}
+
 /** Weak default: Rare's six live explosions; video.c overrides. */
 __attribute__((weak)) s32 portExplosionCap(void)
 {
