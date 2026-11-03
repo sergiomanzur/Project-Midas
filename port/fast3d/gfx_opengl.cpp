@@ -1522,6 +1522,13 @@ static void gfx_opengl_init_extensions(void) {
         }
     }
 
+    {   /* GLES (Adreno/S24 Ultra): the driver's GL_DEPTH_CLAMP lets near-plane-crossing triangles (muzzle
+         * flash, first-person gun) rasterise as huge flickering polygons. Use the z*0.3 shader path there;
+         * GE_DEPTHCLAMP=1/0 forces either way for testing. */
+        const char* e = getenv("GE_DEPTHCLAMP");
+        if (e && e[0] == '0') GLAD_GL_ARB_depth_clamp = 0;
+        else if (gl_es && !(e && e[0] == '1')) GLAD_GL_ARB_depth_clamp = 0;
+    }
     if (!GLAD_GL_ARB_texture_mirror_clamp_to_edge) {
         GLAD_GL_ARB_texture_mirror_clamp_to_edge = GLAD_GL_EXT_texture_mirror_clamp_to_edge;
     }

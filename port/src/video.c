@@ -4918,21 +4918,8 @@ s32 videoInit(void)
 
     SDL_StopTextInput();
 
-#ifdef __ANDROID__
-    {   /* Qualcomm Adreno: the GPU-retained room and model-part cache cuts the render thread's work in
-         * busy scenes by a third to a half (Archives: 14 -> 9 ms a frame, a 50 fps dip back to 60) and
-         * was checked on Adreno 750. Other GL drivers stay on the interpreter until verified; an
-         * explicit room_cache= in midas.ini always wins. */
-        extern int gfx_opengl_renderer_is_adreno(void);
-
-        if (!s_RoomCacheExplicit && s_CfgRoomCache == 0 && s_CfgTickHz != -1 && gfx_opengl_renderer_is_adreno())
-        {
-            s_CfgRoomCache = 2;
-            portRoomCacheSetMode(s_CfgRoomCache);
-            portConLogf("ge: video: Adreno GPU - room_cache defaults to 2 (set room_cache=0 in midas.ini to turn it off)\n");
-        }
-    }
-#endif
+/* room_cache stays 0 on Android: auto-enabling the retained cache on Adreno (1.1.0) produced stray
+ * beige triangles on the S24 Ultra. Opt in with room_cache=2 in midas.ini. */
 
     portRenderThreadStart(); /* item 15: must be the LAST init step - it moves GL off this thread */
 

@@ -66,8 +66,8 @@ android {
         minSdk 26
         targetSdk 34
         // 2: the universal (arm64-v8a + armeabi-v7a) rebuild of 1.0.1.
-        versionCode 3
-        versionName "1.1.0-android"
+        versionCode 4
+        versionName "1.1.1-android"
 
         // SDL2 and the game are both built for the selected ABI(s) by the root
         // CMake project. The default is universal: both ABIs in one APK.
