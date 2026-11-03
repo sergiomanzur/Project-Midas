@@ -1763,8 +1763,16 @@ Gfx *set_enviro_fog_for_items_in_solo_watch_menu(Gfx *gdl, ITEM_IDS itemid, Mtxf
      * watch menu's 3D weapon never drew. */
     ModelRenderData renderdata;
 #endif
+#ifdef TARGET_N64
     ModelHeader model;
+#else
+    Model model; /* the host Model is far larger than the cart's truncated header; modelInit writes all of it */
+#endif
+#ifdef PORT_LP64
+    u32 spb8[512]; /* rwdata cells: the cart's 0x80 bytes overflow with host-sized records */
+#else
     u8 spb8[0x80];
+#endif
     s32 padb4;
     Mtxf sp74;
     Mtxf *matrices;
@@ -1893,9 +1901,9 @@ Gfx *set_enviro_fog_for_items_in_solo_watch_menu(Gfx *gdl, ITEM_IDS itemid, Mtxf
     {
         for (j = 0; j != 20; j += 4)
         {
-            if ((*((ModelNode **) ((((u8 *) bodymodel->Switches) + j) + 0x48))) != NULL)
+            if (bodymodel->Switches[18 + (j >> 2)] != NULL)
             {
-                rwdata = modelGetNodeRwData((Model *) &model, *((ModelNode **) ((((u8 *) bodymodel->Switches) + j) + 0x48)));
+                rwdata = modelGetNodeRwData((Model *) &model, bodymodel->Switches[18 + (j >> 2)]);
 
                 if (rwdata != NULL)
                 {
@@ -1903,9 +1911,9 @@ Gfx *set_enviro_fog_for_items_in_solo_watch_menu(Gfx *gdl, ITEM_IDS itemid, Mtxf
                 }
             }
 
-            if ((*((ModelNode **) ((((u8 *) bodymodel->Switches) + j) + 0x5c))) != NULL)
+            if (bodymodel->Switches[23 + (j >> 2)] != NULL)
             {
-                rwdata = modelGetNodeRwData((Model *) &model, *((ModelNode **) ((((u8 *) bodymodel->Switches) + j) + 0x5c)));
+                rwdata = modelGetNodeRwData((Model *) &model, bodymodel->Switches[23 + (j >> 2)]);
 
                 if (rwdata != NULL)
                 {
