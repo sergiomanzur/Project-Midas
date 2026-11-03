@@ -1331,6 +1331,8 @@ static GLint gl_stream_upload(const float* data, size_t nfloats, size_t stride_f
 }
 
 extern float gfx_ge_dec_b, gfx_ge_dec_d;
+extern "C" int g_PortNearClipMode;
+extern "C" int g_PortNearClipActive;
 static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris) {
     // printf("flushing %d tris\n", buf_vbo_num_tris);
     static int clip = -1;
@@ -1340,6 +1342,20 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
         clip = (e == NULL || e[0] != '0') ? 1 : 0;
         e = getenv("GE_DEC_TOL");
         if (e != NULL && atof(e) > 0.0) tol = (float)atof(e);
+    }
+    {   /* GLES (Adreno): with GL_DEPTH_CLAMP on, a triangle that has a vertex BEHIND the eye (w <= 0)
+         * rasterises as a huge flickering polygon (gun muzzle flash). Those few triangles are batched
+         * apart by gfx_pc (g_PortNearClipMode) and drawn with the clamp off so the driver clips them
+         * properly; everything else, including the watch face that sits inside the near plane, keeps
+         * the clamp. */
+        static int clamp_on = 1;
+        if (gl_es && GLAD_GL_ARB_depth_clamp) {
+            const int want = g_PortNearClipMode ? 0 : 1;
+            if (want != clamp_on) {
+                if (want) glEnable(GL_DEPTH_CLAMP); else glDisable(GL_DEPTH_CLAMP);
+                clamp_on = want;
+            }
+        }
     }
     gl_ret_restore(); /* after a retained draw: the stream VBO + this program's arrays again */
     if (!clip || !ge_dec_draw || gfx_ge_dec_b >= 0.0f || buf_vbo_num_tris == 0) {
@@ -1522,13 +1538,8 @@ static void gfx_opengl_init_extensions(void) {
         }
     }
 
-    {   /* GLES (Adreno/S24 Ultra): the driver's GL_DEPTH_CLAMP lets near-plane-crossing triangles (muzzle
-         * flash, first-person gun) rasterise as huge flickering polygons. Use the z*0.3 shader path there;
-         * GE_DEPTHCLAMP=1/0 forces either way for testing. */
-        const char* e = getenv("GE_DEPTHCLAMP");
-        if (e && e[0] == '0') GLAD_GL_ARB_depth_clamp = 0;
-        else if (gl_es && !(e && e[0] == '1')) GLAD_GL_ARB_depth_clamp = 0;
-    }
+    { const char* e = getenv("GE_DEPTHCLAMP"); if (e && e[0] == '0') GLAD_GL_ARB_depth_clamp = 0; } /* test override */
+    g_PortNearClipActive = (gl_es && GLAD_GL_ARB_depth_clamp) ? 1 : 0;
     if (!GLAD_GL_ARB_texture_mirror_clamp_to_edge) {
         GLAD_GL_ARB_texture_mirror_clamp_to_edge = GLAD_GL_EXT_texture_mirror_clamp_to_edge;
     }
@@ -1687,6 +1698,7 @@ bool gpuq_open;
 
 void gpuq_init(void) {
     gpuq_state = 0;
+    if (getenv("GE_NOGPUQ") != NULL) return; /* A/B switch for driver stalls */
     const char* ext = (const char*)glGetString(GL_EXTENSIONS);
     const bool has = gl_es ? (ext != NULL && strstr(ext, "GL_EXT_disjoint_timer_query") != NULL)
                            : (ext != NULL && strstr(ext, "GL_ARB_timer_query") != NULL);

@@ -474,6 +474,7 @@ static struct PortHwLoad g_PortHwLoad; /* the frame in progress (gfx_api.h) */
 /* ZMODE_DEC projection intercept + pull distance of the current decal state,
  * for the GL backend's decal clip (gfx_opengl_draw_triangles) */
 float gfx_ge_dec_b = 0.0f, gfx_ge_dec_d = 0.0f;
+extern "C" { int g_PortNearClipMode = 0; int g_PortNearClipActive = 0; /* set by the GLES backend when it runs with depth clamp */ }
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
         roc_stat_draw_origin[ge_flush_origin & 15u]++;
@@ -3842,6 +3843,16 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
             }
         }
 ndcprobe_done:;
+    }
+
+    {   /* triangles with a vertex behind the eye are drawn in their own batch (see gfx_opengl_draw_triangles) */
+        static int nc_en = -1;
+        if (nc_en < 0) { const char* e = getenv("GE_NEARCLIP"); nc_en = (e == NULL || e[0] != '0') ? 1 : 0; }
+        const int nc = (nc_en && g_PortNearClipActive && (v1->w <= 0.0f || v2->w <= 0.0f || v3->w <= 0.0f)) ? 1 : 0;
+        if (nc != g_PortNearClipMode) {
+            gfx_flush();
+            g_PortNearClipMode = nc;
+        }
     }
 
     if (rdp.viewport_or_scissor_changed) {

@@ -7,6 +7,7 @@
 #include <os_extension.h>
 #include "music.h"
 #include "snd.h"
+#include "port_console.h"
 //likely named gslibaudio.c from xbla
 /**
  * EU .data, offset from start of data_seg : 0x3620
@@ -1199,6 +1200,34 @@ ALSoundState *sndPlaySfx(struct ALBankAlt_s *soundBank, s16 soundIndex, ALSoundS
         return NULL;
     }
 
+#ifndef TARGET_N64
+    {   /* GE_SFXLOG=1: log every sfx request (index + caller) for audio triage */
+        extern char *getenv(const char *);
+        static int sfxlog = -1;
+        if (sfxlog < 0) sfxlog = getenv("GE_SFXLOG") != NULL;
+        static int dumped;
+        if (sfxlog && !dumped)
+        {
+            int n, cnt = soundBank->instArray[0] != NULL ? ((ALInstrument *) soundBank->instArray[0])->soundCount : 0;
+            dumped = 1;
+            for (n = 0; n < cnt && n < 400; n++)
+            {
+                ALSound *so = ((ALInstrument *) soundBank->instArray[0])->soundArray[n];
+                if (so == NULL || so->wavetable == NULL || so->keyMap == NULL || so->envelope == NULL) { portConLogf("ge: sfxtab %d null\n", n); continue; }
+                portConLogf("ge: sfxtab %d len=%d ty=%d fl=%d lp=%d,%d,%d bk=%d km=%d,%d,%d,%d,%d,%d pan=%d vol=%d env=%d,%d,%d,%d,%d\n", n,
+                            (int) so->wavetable->len, so->wavetable->type, so->wavetable->flags,
+                            so->wavetable->waveInfo.adpcmWave.loop ? (int) so->wavetable->waveInfo.adpcmWave.loop->start : -1,
+                            so->wavetable->waveInfo.adpcmWave.loop ? (int) so->wavetable->waveInfo.adpcmWave.loop->end : -1,
+                            so->wavetable->waveInfo.adpcmWave.loop ? (int) so->wavetable->waveInfo.adpcmWave.loop->count : -1,
+                            so->wavetable->waveInfo.adpcmWave.book ? so->wavetable->waveInfo.adpcmWave.book->order : -1,
+                            so->keyMap->velocityMin, so->keyMap->velocityMax, so->keyMap->keyMin, so->keyMap->keyMax, so->keyMap->keyBase, so->keyMap->detune,
+                            so->samplePan, so->sampleVolume, (int) so->envelope->attackTime, (int) so->envelope->decayTime, (int) so->envelope->releaseTime,
+                            so->envelope->attackVolume, so->envelope->decayVolume);
+            }
+        }
+        if (sfxlog) portConLogf("ge: sfx: idx=%d caller=sndPlaySfx%+ld\n", (int) soundIndex, (long) ((char *) __builtin_return_address(0) - (char *) &sndPlaySfx));
+    }
+#endif
     if (soundIndex == 0)
     {
         return NULL;

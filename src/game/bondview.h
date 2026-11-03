@@ -2369,6 +2369,8 @@ struct player
 #define ARMOR_GAUGE_DL(p) ((p)->hostArmorGaugeDL)
 #define HEALTH_GAUGE_DL(p) ((p)->hostHealthGaugeDL)
 #define watch_scale_destination hostwatchmodel.scale
+/* the cart's pause_watch_related_adjust (0x258) is Model.animframe1 of the watch model overlaid at 0x230 */
+#define pause_watch_related_adjust hostwatchmodel.animframe1
 #else
 #define WATCHMODEL(p) ((Model *) (&(p)->something_with_watch_object_instance))
 #define GAITMODEL(p) ((Model *) (&(p)->model))

@@ -164,9 +164,18 @@ typedef struct ALSeqpSfxConfig_s {
 
 struct ALInstrumentAlt_s
 {
+#ifdef PORT_LP64
+    /* The cart view reads soundArray at +12 (1-based sfx indices: Alt[k] is the
+     * real ALInstrument soundArray[k-1], the first 12 bytes being header words).
+     * With 8-byte pointers a third s32 would pad the array out to +16 and every
+     * sfx index would play the NEXT sound; place it at +8 so Alt[k] stays real[k-1]. */
+    s32 unk0;
+    s32 unk4;
+#else
     s32 unk0;
     s32 unk4;
     s32 unk8;
+#endif
     ALSound *soundArray[1];
 };
 

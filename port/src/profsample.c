@@ -352,7 +352,7 @@ static void psScanThreads(void)
             sev._sigev_un._tid = tid;
 #endif
 
-            if (timer_create(CLOCK_MONOTONIC, &sev, &timer) == 0)
+            if (timer_create((clockid_t) ((~(clockid_t) tid << 3) | 6), &sev, &timer) == 0) /* per-thread CPU time: blocked time is not sampled */
             {
                 its.it_interval.tv_sec = 0;
                 its.it_interval.tv_nsec = 2000000;

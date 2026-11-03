@@ -3566,8 +3566,8 @@ Gfx *draw_background_health_and_armor(Gfx *gdl, Mtx *arg1, s32 zoom_squish)
 
     sp48 = dynAllocateVertices(WATCH_BACKGROUND_VERTEX_COUNT);
     sp44 = dynAllocateVertices(WATCH_BACKGROUND_VERTEX_COUNT);
-    sp40 = dynAllocate(0xF8);
-    sp3C = dynAllocate(0xF8);
+    sp40 = dynAllocate(31 * sizeof(Gfx)) /* 0xF8 bytes on the cart: count Gfx words, the host Gfx is 16 bytes */;
+    sp3C = dynAllocate(31 * sizeof(Gfx)) /* 0xF8 bytes on the cart: count Gfx words, the host Gfx is 16 bytes */;
 
     /**
      * It seems at this point in rendering the background watch arms (hour,minute,second)

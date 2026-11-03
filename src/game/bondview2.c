@@ -11811,7 +11811,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         guPerspective(perspmtx, &perspNorm, g_CurrentPlayer->zoominfovy, waspect, 10.0f, 300.0f, 1.0f);
     }
  
-    gSPMatrix(gdl++, OS_PHYSICAL_TO_K0((u32) perspmtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(gdl++, OS_PHYSICAL_TO_K0(perspmtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
     gSPPerspNormalize(gdl++, perspNorm);
 
     // Keep this nested block for matching.
