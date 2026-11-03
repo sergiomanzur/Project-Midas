@@ -5753,6 +5753,11 @@ s32 portCameraView(void)
 {
     extern s32 get_is_ramrom_flag(void);
 
+    {
+        static int ov = -2;
+        if (ov == -2) { const char *e = SDL_getenv("GE_CAMERAVIEW"); ov = e ? SDL_atoi(e) : -1; } /* test override */
+        if (ov >= 0 && get_is_ramrom_flag() == 0) return ov > 3 ? 3 : ov;
+    }
     return get_is_ramrom_flag() != 0 ? 0 : s_CfgCameraView;
 }
 

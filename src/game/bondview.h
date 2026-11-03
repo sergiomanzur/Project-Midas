@@ -2555,6 +2555,19 @@ extern struct SetupIntroCamera* g_CurrentSetupIntroCamera;
 extern s32 g_SetupIntroCameraCount;
 //D:800364C0
 extern struct SetupIntroCamera *ptr_random06cam_entry;
+#ifdef PORT_LP64
+/* PORT: the intro camera record is a 0x28-byte wire record with no room for 64-bit pointers. */
+#define INTROCAM_TABLE_MAX 64
+struct IntroCamText { struct SetupIntroCamera *cam; char *text1; char *text2; };
+extern struct IntroCamText g_IntroCamTable[INTROCAM_TABLE_MAX];
+extern s32 g_IntroCamTableCount;
+extern char *portIntroCamText(struct SetupIntroCamera *cam, int which);
+#define INTROCAM_TEXT1(c) portIntroCamText((c), 1)
+#define INTROCAM_TEXT2(c) portIntroCamText((c), 2)
+#else
+#define INTROCAM_TEXT1(c) ((c)->lang1c.lang_ptr)
+#define INTROCAM_TEXT2(c) ((c)->lang20.lang_ptr)
+#endif
 //D:800364C4
 extern s32 g_VisibleToGuardsFlag;
 //D:800364C8

@@ -215,6 +215,31 @@ void chraiUpdateOnscreenPropCount(void)
     count = 0;
     prop = chrpropGetActiveTail();
 
+#ifndef TARGET_N64
+    {
+        /* GE_DOORDBG=1: once a second, list the doors within 400 units of Bond */
+        extern char *getenv(const char *);
+        extern void portConLogf(const char *fmt, ...);
+        static s32 dbg = -1;
+        static s32 tick;
+        if (dbg < 0) dbg = getenv("GE_DOORDBG") != NULL;
+        if (dbg && (tick++ % 60) == 0 && g_CurrentPlayer != NULL)
+        {
+            PropRecord *dp;
+            for (dp = prop; dp != NULL; dp = dp->prev)
+            {
+                f32 dx = dp->pos.f[0] - g_CurrentPlayer->field_488.collision_position.f[0];
+                f32 dz = dp->pos.f[2] - g_CurrentPlayer->field_488.collision_position.f[2];
+                if (dp->type == PROP_TYPE_DOOR && (dx * dx + dz * dz) < 400.0f * 400.0f)
+                {
+                    portConLogf("ge: door prop=%p flags=%x pos=(%.0f %.0f %.0f) rooms=%d,%d,%d,%d door=%p dist=%.0f\n", (void *) dp, (unsigned) dp->flags,
+                        dp->pos.f[0], dp->pos.f[1], dp->pos.f[2], dp->rooms[0], dp->rooms[1], dp->rooms[2], dp->rooms[3], (void *) dp->door, sqrtf(dx * dx + dz * dz));
+                }
+            }
+        }
+    }
+#endif
+
     for (; prop != NULL; prop = prop->prev)
     {
         if ((prop->flags & (PROPFLAG_ENABLED | PROPFLAG_ONSCREEN)) == (PROPFLAG_ENABLED | PROPFLAG_ONSCREEN))
@@ -340,6 +365,17 @@ int chrpropIsPoolProp(PropRecord *prop)
 
 void chrpropFree(PropRecord *prop)
 {
+#ifndef TARGET_N64
+    /* PORT: the last collision prop must not outlive its slot (the player's movement code
+     * dereferences it later; on a 64-bit host the freed object's memory is garbage). */
+    {
+        extern PropRecord *stanSavedColl_posData;
+        if (stanSavedColl_posData == prop)
+        {
+            stanSavedColl_posData = NULL;
+        }
+    }
+#endif
     prop->prev = g_FreeProps;
     prop->next = 0x0;
     prop->stan = 0x0;

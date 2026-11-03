@@ -1275,6 +1275,14 @@ Gfx *explosionSmokeRenderPart(struct Smoke *smoke, struct SmokePart *smoke_part,
 #define p_y     smoke_part->pos.f[1]
 #endif
 
+#ifndef TARGET_N64
+    {
+        extern char *getenv(const char *);
+        static s32 nosmoke = -1;
+        if (nosmoke < 0) nosmoke = getenv("GE_NOSMOKE") != NULL;
+        if (nosmoke) return gdl; /* diagnostic: isolate smoke puffs */
+    }
+#endif
     spC0 = g_SmokeRenderPartDefaultVertex;
 
     mtx = currentPlayerGetViewToWorldMtxf();
@@ -2126,6 +2134,14 @@ void explosionScorchTick(struct coord3d *pos, f32 explosion_size, s16 room)
 */
 Gfx *explosionRenderScorchBuffer(Gfx *arg0)
 {
+#ifndef TARGET_N64
+    {
+        extern char *getenv(const char *);
+        static s32 off = -1;
+        if (off < 0) off = getenv("GE_NOSCORCH") != NULL;
+        if (off) return arg0; /* diagnostic */
+    }
+#endif
     //temp_t6 = arg0;
     s32 i;
     s32 phi_s3 = -1;
@@ -2480,6 +2496,14 @@ void explosionCreateBulletImpact(struct coord3d *pos, struct coord3d *arg1, s16 
 */
 Gfx *explosionRenderBulletImpactOnProp(Gfx *gdl, PropRecord *arg1, s32 arg2)
 {
+#ifndef TARGET_N64
+    {
+        extern char *getenv(const char *);
+        static s32 off = -1;
+        if (off < 0) off = getenv("GE_NOSCORCH") != NULL;
+        if (off) return gdl; /* diagnostic */
+    }
+#endif
     s32 padding1;
     s32 padding2;
 
@@ -2562,6 +2586,30 @@ Gfx *explosionRenderBulletImpactOnProp(Gfx *gdl, PropRecord *arg1, s32 arg2)
                             sp48 = impact_type;
                         }
 
+#ifndef TARGET_N64
+                        {
+                            extern char *getenv(const char *);
+                            extern void portConLogf(const char *fmt, ...);
+                            static s32 dbg = -1;
+                            static u32 lasthash[BULLET_IMPACT_BUFFER_LEN];
+                            if (dbg < 0) dbg = getenv("GE_IMPDBG") != NULL;
+                            if (dbg)
+                            {
+                                Vtx *vl = g_BulletImpactBuffer[i].vertex_list;
+                                u32 h = (u32) vl[0].v.ob[0] * 31u + (u32) vl[1].v.ob[1] * 17u + (u32) vl[2].v.ob[2] * 13u + (u32) g_BulletImpactBuffer[i].room;
+                                if (lasthash[i] != h)
+                                {
+                                    lasthash[i] = h;
+                                    portConLogf("ge: impact[%d] room=%d type=%d prop=%p pass=%d v0=(%d,%d,%d) v1=(%d,%d,%d) v2=(%d,%d,%d) v3=(%d,%d,%d) tc0=%d,%d tc2=%d,%d cn=%d,%d,%d,%d\n",
+                                        i, (int) g_BulletImpactBuffer[i].room, (int) impact_type, (void *) g_BulletImpactBuffer[i].prop, (int) pass_type,
+                                        vl[0].v.ob[0], vl[0].v.ob[1], vl[0].v.ob[2], vl[1].v.ob[0], vl[1].v.ob[1], vl[1].v.ob[2],
+                                        vl[2].v.ob[0], vl[2].v.ob[1], vl[2].v.ob[2], vl[3].v.ob[0], vl[3].v.ob[1], vl[3].v.ob[2],
+                                        vl[0].v.tc[0], vl[0].v.tc[1], vl[2].v.tc[0], vl[2].v.tc[1],
+                                        vl[0].v.cn[0], vl[0].v.cn[1], vl[0].v.cn[2], vl[0].v.cn[3]);
+                                }
+                            }
+                        }
+#endif
                         gSPVertex(gdl++, osVirtualToPhysical(g_BulletImpactBuffer[i].vertex_list), 4, 0);
                         gSP2Triangles(gdl++, 0, 1, 2, 0, 0, 2, 3, 0);
                     }

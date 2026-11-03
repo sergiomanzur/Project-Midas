@@ -39,6 +39,7 @@
 #define G_MIRRORPILLAR_EXT           0x48 /* GE: w1!=0 - mirror this overlay into the wide side bands */
 #define G_DXLU_GROUP_EXT             0x49 /* GE: w1=1 begin sort-group (keyed at mean depth), w1=2 begin (drawn last), w1=3 begin room unit (mode 1; off unless GE_XLU_ROOMUNITS=1), w1=0 end */
 #define G_CONSOLE2D_EXT              0x4c /* GE: w1 = w<<16 | h - the console's own 2D space (full window width, no 4:3 pin, window resolution); w1 = 0 ends it. 0x4b is the Coop branch's G_SUBSCREEN_EXT */
+#define G_PORTNEARCLIP_EXT           0x4d /* GE: w1=1 - draw what follows with GL depth clamp off (first-person gun: Adreno turns near-plane-straddling polys into screen-sized triangles under clamp); w1=0 restores */
 #define G_PORTCACHE_EXT              0x4a /* GE: the NEXT G_DL is a room list (w1 = 1<<16 | room) or a model part list (w1 = 2<<16 | vertex segment) for the room / part cache (roc_hooks.c) */
 
 /* PD gbiex.h extra-geometry-mode bits (rsp.extra_geometry_mode) */

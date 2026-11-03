@@ -1,5 +1,6 @@
 #include <ultra64.h>
 #ifndef TARGET_N64
+#include <stdint.h>
 #include <stdio.h> /* MP startpad/spawn debug log */
 #endif
 #include <memp.h>
@@ -18,6 +19,26 @@
 #include "game/ramromreplay.h"
 #include "game/stan.h"
 #include "mprules.h"
+
+#ifdef PORT_LP64
+struct IntroCamText g_IntroCamTable[INTROCAM_TABLE_MAX];
+s32 g_IntroCamTableCount = 0;
+
+char *portIntroCamText(struct SetupIntroCamera *cam, int which)
+{
+    s32 i;
+
+    for (i = 0; i < g_IntroCamTableCount; i++)
+    {
+        if (g_IntroCamTable[i].cam == cam)
+        {
+            return (which == 1) ? g_IntroCamTable[i].text1 : g_IntroCamTable[i].text2;
+        }
+    }
+
+    return NULL;
+}
+#endif
 
 
 /**
@@ -167,6 +188,9 @@ void bondviewLoadSetupIntroSection(void)
     ptr_random06cam_entry = NULL;
     g_CurrentSetupIntroCamera = NULL;
     g_SetupIntroCameraCount = 0;
+#ifdef PORT_LP64
+    g_IntroCamTableCount = 0;
+#endif
     mission_timer = 0;
     watch_time_0 = 0;
     g_IntroAnimationIndex = 0;
@@ -212,7 +236,7 @@ void bondviewLoadSetupIntroSection(void)
 #endif
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSpawn));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSpawn));
                 }
                 break;
 
@@ -249,7 +273,7 @@ void bondviewLoadSetupIntroSection(void)
                         }
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroItem));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroItem));
                 }
                 break;
 
@@ -260,7 +284,7 @@ void bondviewLoadSetupIntroSection(void)
                         give_cur_player_ammo(((struct SetupIntroAmmo*)intro_record)->ammo_type, ((struct SetupIntroAmmo*)intro_record)->ammo_amount);
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAmmo));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAmmo));
                 }
                 break;
 
@@ -279,7 +303,7 @@ void bondviewLoadSetupIntroSection(void)
                     intro_swirl->unk14.fval = intro_swirl->unk14.ival / M_U16_MAX_VALUE_F;
                     intro_swirl->unk18.fval = intro_swirl->unk18.ival / M_U16_MAX_VALUE_F;
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSwirl));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSwirl));
                 }
                 break;
 
@@ -287,7 +311,7 @@ void bondviewLoadSetupIntroSection(void)
                 {
                     g_IntroAnimationIndex = ((struct SetupIntroAnim*)intro_record)->intro_anim;
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAnim));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAnim));
                 }
                 break;
 
@@ -309,7 +333,7 @@ void bondviewLoadSetupIntroSection(void)
                     }
 #endif
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCuff));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCuff));
                 }
                 break;
 
@@ -317,7 +341,9 @@ void bondviewLoadSetupIntroSection(void)
                 {
                     if (get_cur_playernum() == 0)
                     {
+#ifndef PORT_LP64
                         ((struct SetupIntroCamera*)intro_record)->prev = g_CurrentSetupIntroCamera;
+#endif
                         g_CurrentSetupIntroCamera = (struct SetupIntroCamera*)intro_record;
                         g_SetupIntroCameraCount = g_SetupIntroCameraCount + 1;
 
@@ -327,7 +353,21 @@ void bondviewLoadSetupIntroSection(void)
                         ((struct SetupIntroCamera*)intro_record)->unk10.fval = ((struct SetupIntroCamera*)intro_record)->unk10.ival / M_U16_MAX_VALUE_F;
                         ((struct SetupIntroCamera*)intro_record)->unk14.fval = ((struct SetupIntroCamera*)intro_record)->unk14.ival / M_U16_MAX_VALUE_F;
 
-#ifdef TARGET_N64
+#ifdef PORT_LP64
+                        {
+                            struct SetupIntroCamera *cam = (struct SetupIntroCamera*)intro_record;
+                            u8 *t1 = langGet(cam->lang1c.lang_index[0]);
+                            u8 *t2 = (cam->lang20.lang_index != 0) ? langGet((u16)cam->lang20.lang_index) : NULL;
+
+                            if (g_IntroCamTableCount < INTROCAM_TABLE_MAX)
+                            {
+                                g_IntroCamTable[g_IntroCamTableCount].cam = cam;
+                                g_IntroCamTable[g_IntroCamTableCount].text1 = (char *)t1;
+                                g_IntroCamTable[g_IntroCamTableCount].text2 = (char *)t2;
+                                g_IntroCamTableCount++;
+                            }
+                        }
+#elif defined(TARGET_N64)
                         ((struct SetupIntroCamera*)intro_record)->lang1c.lang_ptr = langGet(((struct SetupIntroCamera*)intro_record)->lang1c.lang_index[1]);
 #else
                         /* PORT: the text id sits in the low half of the raw word,
@@ -335,13 +375,15 @@ void bondviewLoadSetupIntroSection(void)
                         ((struct SetupIntroCamera*)intro_record)->lang1c.lang_ptr = langGet(((struct SetupIntroCamera*)intro_record)->lang1c.lang_index[0]);
 #endif
 
+#ifndef PORT_LP64
                         if (((struct SetupIntroCamera*)intro_record)->lang20.lang_index != 0)
                         {
                             ((struct SetupIntroCamera*)intro_record)->lang20.lang_ptr = langGet((u16)((struct SetupIntroCamera*)intro_record)->lang20.lang_index);
                         }
+#endif
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCamera));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCamera));
                 }
                 break;
 
@@ -363,7 +405,7 @@ void bondviewLoadSetupIntroSection(void)
 
                     if (watch_time_0);
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroWatch));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroWatch));
                 }
                 break;
 
@@ -388,7 +430,7 @@ void bondviewLoadSetupIntroSection(void)
                         credits++;
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCredits));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCredits));
                 }
                 break;
 
@@ -397,7 +439,7 @@ void bondviewLoadSetupIntroSection(void)
                     #ifdef DEBUG
                         ossyncprintf("unknown bondstart type %d!\n",INTRO_TYPE(intro_record));
                     #endif
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroEmpty));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroEmpty));
                 }
                 break;
 
@@ -409,11 +451,16 @@ void bondviewLoadSetupIntroSection(void)
     {
         ptr_random06cam_entry = g_CurrentSetupIntroCamera;
         rand_camera_index = (s32)(randomGetNext() % (u32) g_SetupIntroCameraCount);
+#ifdef PORT_LP64
+        /* newest camera first, like the prev chain */
+        ptr_random06cam_entry = g_IntroCamTable[g_IntroCamTableCount - 1 - rand_camera_index].cam;
+#else
         while (rand_camera_index > 0)
         {
             rand_camera_index--;
             ptr_random06cam_entry = ptr_random06cam_entry->prev;
         }
+#endif
     }
 
     bondinvAddInvItem(ITEM_FIST);

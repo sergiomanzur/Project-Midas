@@ -1898,6 +1898,12 @@ Gfx *bgLevelRender(Gfx *arg0)
     arg0->words.w0 = (u32)0x46 << 24;
     arg0->words.w1 = 0;
     arg0++;
+    /* 0x4d = G_PORTNEARCLIP_EXT: the world is drawn with GL depth clamp off (Adreno turns
+     * near-plane-straddling polygons under clamp into screen-sized fog-coloured triangles).
+     * Only the watch face needs the clamp, and that is drawn after the world. */
+    arg0->words.w0 = (uintptr_t)0x4d << 24;
+    arg0->words.w1 = 1;
+    arg0++;
 #endif
     gSPSetLights1(arg0++, GlobalLight);
     gSPLookAt(arg0++, sub_GAME_7F078474());
@@ -6150,20 +6156,32 @@ void bgDetermineVisibleRooms(void)
         static u32 last;
         u32 *t = (u32 *) &g_GlobalTimer;
 
-        if (said < 6 && (last == 0 || *t - last > 120u))
+        extern char *getenv(const char *);
+        static s32 vislog = -1;
+        if (vislog < 0) vislog = getenv("GE_VISLOG") != NULL;
+
+        if ((said < 6 || vislog) && (last == 0 || *t - last > (vislog ? 60u : 120u)))
         {
             s32 r, drawn = 0;
             s32 rq = bondviewGetCurrentPlayersRoom();
+            char list[160];
+            s32 ln = 0;
 
             last = *t;
             said++;
+            list[0] = 0;
             for (r = 0; r < MAXROOMCOUNT; r++)
             {
-                if (g_BgRoomInfo[r].room_rendered) drawn++;
+                if (g_BgRoomInfo[r].room_rendered)
+                {
+                    drawn++;
+                    if (vislog && ln < 140) ln += snprintf(list + ln, sizeof(list) - ln, "%d ", (int) r);
+                }
             }
+            if (vislog) portConLogf("ge: vislist %s\n", list);
             portConLogf("ge: vis rooms=%d max=%d drawn=%d room=%d pos=%.0f,%.0f,%.0f screen=%.0f,%.0f-%.0f,%.0f\n",
                     (s32) g_BgNumberOfRoomsDrawn, (s32) g_MaxNumRooms, drawn, (s32) rq,
-                    g_CurrentPlayer->pos.f[0], g_CurrentPlayer->pos.f[1], g_CurrentPlayer->pos.f[2],
+                    g_CurrentPlayer->field_488.collision_position.f[0], g_CurrentPlayer->field_488.collision_position.f[1], g_CurrentPlayer->field_488.collision_position.f[2],
                     g_CurrentPlayer->screensize.min.x, g_CurrentPlayer->screensize.min.y,
                     g_CurrentPlayer->screensize.max.x, g_CurrentPlayer->screensize.max.y);
         }
@@ -7225,6 +7243,16 @@ void sub_GAME_7F0BA2D4(coord3d *bbmin, coord3d *bbmax, s32 *room_list, s32 *coun
                     portal_max.f[2] = *(f32 *) &D_80044918;
 #endif
                     portal_pts = g_BgPortals[portal_idx].offset_portal;
+#ifndef TARGET_N64
+                    if ((uintptr_t)portal_pts < 0x10000 || portal_pts->numPoints > 32)
+                    {
+                        static s32 said;
+                        extern void portConLogf(const char *fmt, ...);
+                        if (said++ < 8)
+                            portConLogf("ge: bg: portal %d has a bad point list (%p) - skipped\n", portal_idx, (void *)portal_pts);
+                        goto next_portal;
+                    }
+#endif
                     
                     for (j = 0; j < portal_pts->numPoints; j++)
                     {

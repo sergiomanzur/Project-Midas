@@ -3897,6 +3897,21 @@ typedef struct SetupIntroCamera
     fs15_16 unk10;                               // yaw in radians
     fs15_16 unk14;                               // pitch in radians
     s32     unk18;                               // pad
+#if defined(__LP64__) || defined(_WIN64)
+    /* PORT: the record is read straight from the setup file (0x28 bytes), so it can't hold
+     * 64-bit pointers; the resolved text/prev pointers live in a side table (bondview_r.c). */
+    union
+    {
+        u16 lang_index[2];
+        u32 lang_slot;
+    } lang1c;
+    union
+    {
+        s32 lang_index;
+        u32 lang_slot;
+    } lang20;
+    u32 prev_slot;
+#else
     union
     {
         u16   lang_index[2];
@@ -3908,6 +3923,7 @@ typedef struct SetupIntroCamera
         char *lang_ptr;
     } lang20;
     struct SetupIntroCamera *prev;
+#endif
 } SetupIntroCamera;
 
 /**

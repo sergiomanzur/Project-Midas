@@ -1618,6 +1618,9 @@ void gunAdvanceBeamTimer(BeamRecord* beam)
     }
 }
 
+#ifndef TARGET_N64
+s32 g_PortGunMarker;
+#endif
 // Address: 0x7F062BE4
 void gunRenderFirstPersonGunModels(Gfx **gdlptr)
 {
@@ -1646,6 +1649,17 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
     }
 #endif
  
+#ifndef TARGET_N64
+    {
+        /* Marker (0x4d = G_PORTNEARCLIP_EXT): draw the gameplay gun with depth clamp off; never
+         * while the watch is up or moving, which needs the clamp. */
+        extern s32 g_PortGunMarker;
+        g_PortGunMarker = (g_CurrentPlayer->pause_state == 0 && g_CurrentPlayer->pausing_flag == 0) ? 1 : 0;
+        gdl->words.w0 = (uintptr_t)0x4d << 24;
+        gdl->words.w1 = g_PortGunMarker;
+        gdl++;
+    }
+#endif
     for (handnum = 0; handnum != 2; handnum++) 
 
     {
@@ -1748,6 +1762,15 @@ void gunRenderFirstPersonGunModels(Gfx **gdlptr)
         }
     }
 
+#ifndef TARGET_N64
+    {
+        extern s32 g_PortGunMarker;
+        gdl->words.w0 = (uintptr_t)0x4d << 24;
+        gdl->words.w1 = 0;
+        gdl++;
+        g_PortGunMarker = 0;
+    }
+#endif
     *gdlptr = gdl;
 }
 
@@ -5665,7 +5688,11 @@ void sub_GAME_7F068508(GUNHAND handnum, f32 floor_y_pos)
 
         rand = ((f32) ((u32) randomGetNext())) * 2.3283064e-10f;
         casing->vel.y = ((rand * 2.5f) * 0.0625f) + 2.5f;
+#ifdef TARGET_N64
         casing->vel.z = frac * 0.0f;
+#else
+        casing->vel.z = 0.0f; /* PORT: frac is not assigned yet; NaN * 0 poisoned the casing (huge beige polygons) */
+#endif
 
         mtx4RotateVecInPlace(THROWMTX, &casing->vel);
 
@@ -6023,7 +6050,11 @@ void sub_GAME_7F068508(GUNHAND handnum, f32 floor_y_pos)
 
         rand = ((f32) ((u32) randomGetNext())) * 2.3283064e-10f;
         casing->vel.y = ((rand * 2.5f) * 0.0625f) + 2.5f;
+#ifdef TARGET_N64
         casing->vel.z = frac * 0.0f;
+#else
+        casing->vel.z = 0.0f; /* PORT: frac is not assigned yet; NaN * 0 poisoned the casing (huge beige polygons) */
+#endif
 
         mtx4RotateVecInPlace(THROWMTX, &casing->vel);
 
@@ -6261,6 +6292,22 @@ void sub_GAME_7F068EC4(CasingRecord *casing, Gfx **gdl)
         &casing_model_mtx,
         (Mtxf *)model.render_pos);
 
+#ifndef TARGET_N64
+    {
+        extern char *getenv(const char *);
+        extern void portConLogf(const char *fmt, ...);
+        static s32 dbg = -1, n;
+        if (dbg < 0) dbg = getenv("GE_CASEDBG") != NULL;
+        if (dbg && n < 400 && (n++ % 4) == 0)
+        {
+            const f32 *m = (const f32 *) model.render_pos;
+            portConLogf("ge: casing %p hdr=%p nmat=%d pos=(%.1f %.1f %.1f) vel=(%.2f %.2f %.2f) rpm=[%.2f %.2f %.2f | %.2f %.2f %.2f | %.2f %.2f %.2f | %.1f %.1f %.1f] scale=%g\n",
+                (void *) casing, (void *) model_header, (int) model_header->numMatrices,
+                casing->pos.f[0], casing->pos.f[1], casing->pos.f[2], casing->vel.f[0], casing->vel.f[1], casing->vel.f[2],
+                m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10], m[12], m[13], m[14], (double) g_CasingModelScale);
+        }
+    }
+#endif
     model_scale_or_min_translation = g_CasingMinMatrixTranslation;
     max_matrix_translation         = g_CasingMaxMatrixTranslation;
 
@@ -6310,6 +6357,14 @@ void gunRenderCasings(Gfx **gdl)
 {
     CasingRecord* end = g_Casings + ARRAYCOUNT(g_Casings);
     CasingRecord* entry = g_Casings;
+#ifndef TARGET_N64
+    {
+        extern char *getenv(const char *);
+        static s32 off = -1;
+        if (off < 0) off = getenv("GE_NOCASING") != NULL;
+        if (off) return; /* diagnostic */
+    }
+#endif
 
     while (entry < end)
     {

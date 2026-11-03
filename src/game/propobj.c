@@ -14399,6 +14399,23 @@ bool posIsOnScreen(PropRecord *prop, coord3d *pos, f32 arg2, bool arg3)
                 }
             }
 #endif
+#ifndef TARGET_N64
+            if (prop->type == PROP_TYPE_DOOR)
+            {
+                extern char *getenv(const char *);
+                extern void portConLogf(const char *fmt, ...);
+                static s32 dbg = -1, n;
+                if (dbg < 0) dbg = getenv("GE_DOORDBG") != NULL;
+                if (dbg && (n++ % 30) == 0)
+                {
+                    bbox2d bb2;
+                    s32 hasbb = getPropCombinedRoomsBBox2D(prop, &bb2);
+                    portConLogf("ge: door vis prop=%p pos=(%.0f %.0f %.0f) size=%.1f cull=%d fog=%d sub54C58=%d hasbbox=%d inscreen=%d\n", (void *) prop,
+                        pos->x, pos->y, pos->z, arg2, (int) arg3, (int) fogPositionIsVisibleThroughFog(pos, arg2), (int) sub_GAME_7F054C58(pos, arg2),
+                        hasbb, hasbb ? (int) camIsPosInScreenBox(pos, arg2, &bb2) : (int) camIsPosInScreen(pos, arg2));
+                }
+            }
+#endif
             if (fogPositionIsVisibleThroughFog(pos, arg2) && (!arg3 || sub_GAME_7F054C58(pos, arg2)))
             {
                 if (getPropCombinedRoomsBBox2D(prop, &bbox) != 0)

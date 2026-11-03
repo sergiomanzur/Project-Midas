@@ -432,6 +432,11 @@ u8 * langGet(s32 slotID)
      * unconditionally. */
     if (textbank_ptr == NULL)
     {
+        {
+            extern void portConLogf(const char *fmt, ...);
+            static s32 said;
+            if (said++ < 20) portConLogf("ge: langGet: bank %u (slot %d) not loaded\n", bank_id, slotID & 0x03FF);
+        }
         return (u8 *)"Error: Bank not loaded";
     }
 #endif

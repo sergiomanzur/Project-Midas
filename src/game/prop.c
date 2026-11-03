@@ -1338,6 +1338,19 @@ void setupDoor(s32 arg0, struct DoorRecord *door, s32 arg2)
         spC8.f[0] = sp118.f[0];
         spC8.f[1] = sp118.f[1];
         spC8.f[2] = sp118.f[2];
+#ifndef TARGET_N64
+        {
+            extern char *getenv(const char *);
+            extern void portConLogf(const char *fmt, ...);
+            static s32 dbg = -1;
+            if (dbg < 0) dbg = getenv("GE_DOORDBG") != NULL;
+            if (dbg)
+                portConLogf("ge: setupDoor #%d model=%d pad=%d pos=(%.0f %.0f %.0f) up=(%.2f %.2f %.2f) look=(%.2f %.2f %.2f) bbox=(%.0f %.0f %.0f %.0f %.0f %.0f) centre=(%.0f %.0f %.0f) posstan=(%.0f %.0f %.0f)\n",
+                    (int) arg2, (int) modelnum, (int) door->pad, pad->pos.f[0], pad->pos.f[1], pad->pos.f[2], pad->up.f[0], pad->up.f[1], pad->up.f[2],
+                    pad->look.f[0], pad->look.f[1], pad->look.f[2], pad->bbox.xmin, pad->bbox.xmax, pad->bbox.ymin, pad->bbox.ymax, pad->bbox.zmin, pad->bbox.zmax,
+                    sp118.f[0], sp118.f[1], sp118.f[2], sp1B8.f[0], sp1B8.f[1], sp1B8.f[2]);
+        }
+#endif
 
         if (!(door->flags2 & 1))
         {
@@ -2654,6 +2667,22 @@ void proplvreset2(enum LEVELID stageId)
                     portHwNotePropdef(phead->type); /* tickhz=hw stage-load setup work (frametiming.c) */
                 }
 #endif
+#ifndef TARGET_N64
+                {
+                    extern char *getenv(const char *);
+                    extern void portConLogf(const char *fmt, ...);
+                    static s32 tdbg = -1;
+                    static char seq[3000];
+                    static s32 sl;
+                    if (tdbg < 0) tdbg = getenv("GE_PDEFSEQ") != NULL;
+                    if (tdbg)
+                    {
+                        if (pdefIndex == 0) sl = 0;
+                        if (sl < 2900) sl += snprintf(seq + sl, sizeof(seq) - sl, "%d ", (int) phead->type);
+                        if (phead->type == PROPDEF_DOOR_SCALE || pdefIndex == 40) portConLogf("ge: pdefseq at index %d: %s\n", (int) pdefIndex, seq);
+                    }
+                }
+#endif
                 switch (phead->type)
                 {
                     case PROPDEF_GUARD_ATTRIBUTE:
@@ -2690,6 +2719,22 @@ void proplvreset2(enum LEVELID stageId)
                         break;
                     case PROPDEF_DOOR_SCALE:
                         g_DoorScale = ((struct GlobalDoorScaleRecord *) phead)->Scale / M_U16_MAX_VALUE_F;
+#ifdef PORT_LP64
+                        if (g_DoorScale < 0.1f || g_DoorScale > 10.0f)
+                        {
+                            /* PORT: the record's Scale word comes through unswapped in the expanded
+                             * setup (read as 0x19000000 -> 6400.0) and stretched every door pad's
+                             * bbox, leaving doors solid but invisible. A sane scale is about 1. */
+                            g_DoorScale = 1.0f;
+                        }
+#endif
+#ifndef TARGET_N64
+                        {
+                            extern void portConLogf(const char *fmt, ...);
+                            const u32 *rw = (const u32 *) phead;
+                            portConLogf("ge: door scale record: words %08x %08x %08x -> g_DoorScale=%g (sizeof header %d)\n", rw[0], rw[1], rw[2], (double) g_DoorScale, (int) sizeof(struct PropDefHeaderRecord));
+                        }
+#endif
                         break;
                     case PROPDEF_COLLECTABLE:
                         if (withchrs && (!(((struct WeaponObjRecord *) phead)->flags2 & flags)))

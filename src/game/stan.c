@@ -163,7 +163,7 @@ const char aStanlinelog[] = "-stanlinelog";
 // forward declarations
 
 s32 stanIsSpecialBit1Set(StandTile *arg0, struct StandTileLocusCallbackRecord* arg1);
-s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3, s32 arg4, s32 *outFlags);
+s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, f32 arg2, f32 arg3, f32 arg4, struct StandTileLocusCallbackRecord *rec);
 s32 sub_GAME_7F0B21B0(StandTile **tileStack, f32 target_x, f32 target_z, f32 radius, s32 *rooms, s32 *count_rtn, s32 bufMax);
 f32 getShortest2dDispToInfTripleEdge(StandTile *tile, s32 start3index, f32 p_x, f32 p_z);
 StanCollisionResult sub_GAME_7F0B1DDC(struct StandTile**, f32, f32, f32, standTileLocusCallback_A_t, standTileLocusCallback_B_t, standTileLocusCallback_C_t, struct StandTileLocusCallbackRecord*);
@@ -2865,8 +2865,12 @@ s32 stanIsSpecialBit1Set(StandTile *arg0, struct StandTileLocusCallbackRecord *a
 /**
  * Address: 7F0B2274
  */
-s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3, s32 arg4, s32 *outFlags)
+/* PORT: matches standTileLocusCallback_B_t. It was declared with s32 arg2-arg4, which is only
+ * call-compatible where floats travel in integer registers (32-bit softfp); on arm64 the record
+ * pointer landed in the wrong register and the writes below went through garbage. */
+s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, f32 arg2, f32 arg3, f32 arg4, struct StandTileLocusCallbackRecord *rec)
 {
+    s32 *outFlags = (s32 *) rec;
     u16 link;
     StandTile *target;
     s32 mid;
@@ -2923,6 +2927,9 @@ s32 stanTileDistanceRelated(StandTile **arg0, f32 arg1, f32 arg2, f32 arg3, stru
     ((s32 *) arg4)[1] = 0;
     ((s32 *) arg4)[2] = 0;
     ((s32 *) arg4)[3] = 0;
+#ifdef PORT_LP64
+    memset(arg4, 0, sizeof(*arg4)); /* the host record has an 8-byte rooms pointer: 24 bytes */
+#endif
     (void) i;
 #endif
 

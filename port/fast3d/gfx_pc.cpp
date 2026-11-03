@@ -474,7 +474,7 @@ static struct PortHwLoad g_PortHwLoad; /* the frame in progress (gfx_api.h) */
 /* ZMODE_DEC projection intercept + pull distance of the current decal state,
  * for the GL backend's decal clip (gfx_opengl_draw_triangles) */
 float gfx_ge_dec_b = 0.0f, gfx_ge_dec_d = 0.0f;
-extern "C" { int g_PortNearClipMode = 0; int g_PortNearClipActive = 0; /* set by the GLES backend when it runs with depth clamp */ }
+extern "C" { int g_PortGunNoClamp = 0; int g_PortNearClipMode = 0; int g_PortNearClipActive = 0; /* set by the GLES backend when it runs with depth clamp */ }
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
         roc_stat_draw_origin[ge_flush_origin & 15u]++;
@@ -3652,6 +3652,42 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
         }
     }
 
+    {
+        /* GE_TRIDBG=1: list each distinct full-screen draw state once (rects and huge triangles). */
+        static int tridbg = -1;
+        static uint64_t seen[256];
+        static int nseen = 0;
+        if (tridbg < 0) tridbg = getenv("GE_TRIDBG") != NULL;
+        if (tridbg && !roc_drop) {
+            float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
+            bool behind = false;
+            for (int i = 0; i < 3; i++) {
+                const float w = v_arr[i]->w;
+                if (w <= 0.001f) { behind = true; continue; }
+                const float nx = v_arr[i]->x / w, ny = v_arr[i]->y / w;
+                if (nx < minx) minx = nx; if (nx > maxx) maxx = nx;
+                if (ny < miny) miny = ny; if (ny > maxy) maxy = ny;
+            }
+            if (!behind && ((maxx - minx) * (maxy - miny) > 3.5f)) {
+                const uint32_t fc = (rdp.fill_color.r << 24) ^ (rdp.fill_color.g << 16) ^ (rdp.fill_color.b << 8);
+                const uint32_t pc = (rdp.prim_color.r << 24) ^ (rdp.prim_color.g << 16) ^ (rdp.prim_color.b << 8);
+                const uint32_t ec = (rdp.env_color.r << 24) ^ (rdp.env_color.g << 16) ^ (rdp.env_color.b << 8);
+                const uint64_t h = (uint64_t) fc * 1000003u ^ ((uint64_t) pc << 7) ^ ((uint64_t) ec << 13) ^ ((uint64_t) rdp.other_mode_l << 3) ^ (rdp.combine_mode * 31u) ^ (is_rect ? 1u : 0u);
+                bool found = false;
+                for (int k = 0; k < nseen; k++) if (seen[k] == h) { found = true; break; }
+                if (!found && nseen < 256) {
+                    seen[nseen++] = h;
+                    fprintf(stderr, "ge: tridbg new fullscreen draw #%d at tri %u: rect=%d gm=%x oml=%x omh=%x cm=%llx fill=%02x%02x%02x%02x prim=%02x%02x%02x%02x env=%02x%02x%02x%02x z=%.2f w=%.2f\n",
+                            nseen, (unsigned) ge_tris_submitted, (int) is_rect, (unsigned) rsp.geometry_mode, (unsigned) rdp.other_mode_l, (unsigned) rdp.other_mode_h,
+                            (unsigned long long) rdp.combine_mode,
+                            rdp.fill_color.r, rdp.fill_color.g, rdp.fill_color.b, rdp.fill_color.a,
+                            rdp.prim_color.r, rdp.prim_color.g, rdp.prim_color.b, rdp.prim_color.a,
+                            rdp.env_color.r, rdp.env_color.g, rdp.env_color.b, rdp.env_color.a, v1->z, v1->w);
+                }
+            }
+        }
+    }
+
     if (!roc_drop && (rsp.geometry_mode & G_CULL_BOTH) != 0) {
         /* Only the sign of the projected cross product matters, so evaluate it
          * without the six divides: cross = N / (w1 w2^2 w3) with N the
@@ -3822,13 +3858,13 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
                 hit = false;
             }
             if (hit) {
-                static uint64_t seen[64];
+                static uint64_t seen[256];
                 static int nseen;
                 const void* ta = rendering_state.textures[0] ? (void*)rendering_state.textures[0]->first.texture_addr : NULL;
                 uint64_t sig = ((uint64_t)rdp.other_mode_l << 32) ^ (uint64_t)(uintptr_t)ta;
                 int k;
                 for (k = 0; k < nseen; k++) if (seen[k] == sig) break;
-                if (k == nseen && nseen < 64) {
+                if (k == nseen && nseen < 256) {
                     seen[nseen++] = sig;
                     fprintf(stderr,
                             "ndcprobe: omode_l=%08x omode_h=%08x cc=%016llx geom=%08x tex=%p fmt=%d siz=%d tlut=%d w=(%.1f %.1f %.1f) z/w=(%.3f %.3f %.3f) ndc=(%.3f,%.3f)(%.3f,%.3f)(%.3f,%.3f) rgba0=%02x%02x%02x%02x\n",
@@ -3848,7 +3884,7 @@ ndcprobe_done:;
     {   /* triangles with a vertex behind the eye are drawn in their own batch (see gfx_opengl_draw_triangles) */
         static int nc_en = -1;
         if (nc_en < 0) { const char* e = getenv("GE_NEARCLIP"); nc_en = (e == NULL || e[0] != '0') ? 1 : 0; }
-        const int nc = (nc_en && g_PortNearClipActive && (v1->w <= 0.0f || v2->w <= 0.0f || v3->w <= 0.0f)) ? 1 : 0;
+        const int nc = (nc_en && g_PortNearClipActive && (g_PortGunNoClamp || v1->w <= 0.0f || v2->w <= 0.0f || v3->w <= 0.0f)) ? 1 : 0;
         if (nc != g_PortNearClipMode) {
             gfx_flush();
             g_PortNearClipMode = nc;
@@ -4018,7 +4054,7 @@ ndcprobe_done:;
             static int nseen;
             int k;
             for (k = 0; k < nseen; k++) if (seen[k] == rdp.other_mode_l) break;
-            if (k == nseen && nseen < 64) {
+            if (k == nseen && nseen < 256) {
                 /* g_PortFramesPumped: extern "C" at file scope */
                 seen[nseen++] = rdp.other_mode_l;
                 fprintf(stderr, "lightdbg: cvgsel-mode omode_l=%08x omode_h=%08x cc=%016llx amux=%d geom=%08x tile0fmt=%d siz=%d -> %s frame=%u ndc=(%.2f,%.2f) c1a=%02x\n",
@@ -4907,7 +4943,7 @@ ndcprobe_done:;
                     if (census) {
                         int k;
                         for (k = 0; k < nseen; k++) if (seen[k] == rdp.other_mode_l) break;
-                        if (k == nseen && nseen < 64) {
+                        if (k == nseen && nseen < 256) {
                             extern uint32_t num_dls;
                             seen[nseen++] = rdp.other_mode_l;
                             fprintf(stderr, "xlucensus: omode_l=%08x zmode=%s task=%u\n", rdp.other_mode_l,
@@ -7630,6 +7666,12 @@ static void gfx_run_dl(Gfx* cmd) {
                 gfx_ge_con2d_set((uint32_t) (cmd->words.w1 >> 16), (uint32_t) (cmd->words.w1 & 0xffffu));
                 gfx_update_aspect_mode();
                 rdp.viewport_or_scissor_changed = true;
+                break;
+            case G_PORTNEARCLIP_EXT:
+                if ((cmd->words.w1 != 0) != (g_PortGunNoClamp != 0)) {
+                    gfx_flush();
+                    g_PortGunNoClamp = (cmd->words.w1 != 0) ? 1 : 0;
+                }
                 break;
             case G_MIRRORPILLAR_EXT:
                 /* GE: bracket around a full-screen overlay whose side bands
