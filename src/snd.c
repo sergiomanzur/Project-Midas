@@ -1127,10 +1127,16 @@ void sndSetPriority(ALSoundState *state, u8 priority)
 u8 sndGetPlayingState(ALSoundState *state)
 {
 #ifdef PORT_LP64
-    /* PORT: setup objects are still N64-layout in memory, so a record's sound
-     * state field can hold other words of the record, not a pointer. */
+    /* PORT: a record's sound-state field can hold other words of an N64-layout
+     * record instead of a pointer. Reject those, but do not reject the real
+     * low-arena states: the music heap (and therefore every ALSoundState) is
+     * allocated by portAllocHigh at 0x40000000, which is below the old
+     * 0x50000000 floor. That made sndGetPlayingState() report AL_STOPPED for
+     * live door/tank/alarm loops, so they were never deactivated (endless
+     * Runway door sound). */
     if ((uintptr_t) state & 3 || ((uintptr_t) state >> 47) != 0 ||
-        ((uintptr_t) state >> 32 == 0 && ((uintptr_t) state < 0x50000000u || (uintptr_t) state >= 0x70000000u)))
+        ((uintptr_t) state >> 32 == 0 &&
+         ((uintptr_t) state < 0x10000000u || (uintptr_t) state >= 0x80000000u)))
     {
         return AL_STOPPED;
     }

@@ -63,10 +63,10 @@ android {
         applicationId "org.midas.android"
         minSdk 26
         targetSdk 34
-        // 7: the 64-bit stability release (setup records, monitor scripts,
-        // pointer-width pointer arithmetic, touch-overlay shortcut).
-        versionCode 7
-        versionName "1.1.4-android"
+        // 8: 64-bit stability release; fixes live sound-state deactivation so
+        // looping door/tank/alarm SFX stop (Runway gray door).
+        versionCode 8
+        versionName "1.1.5-android"
 
         // SDL2 and the game are both built for the selected ABI(s) by the root
         // CMake project. The default is universal: both ABIs in one APK.

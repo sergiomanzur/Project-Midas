@@ -233,6 +233,9 @@ void doorDeactivatePortal(DoorRecord *door);
 void doorSetOpenState(DoorRecord *door, s32 state);
 s32  sub_GAME_7F053894(coord3d *pos, f32 low, f32 high);
 void sub_GAME_7F053A3C(DoorRecord *door);
+#ifndef TARGET_N64
+static s32 portDoorDbgOn(void);
+#endif
 
 // End forward declarations.
 
@@ -13772,6 +13775,17 @@ void sub_GAME_7F053A3C(DoorRecord* arg0)
 
 void door7F053B10(DoorRecord *door) //#MATCH
 {
+#ifndef TARGET_N64
+    if (portDoorDbgOn())
+    {
+        fprintf(stderr, "ge: doorsnd stop door=%p open=%p/open=%d close=%p/close=%d\n",
+                (void *) door, (void *) door->openSoundState,
+                (s32) sndGetPlayingState(door->openSoundState),
+                (void *) door->closeSoundState,
+                (s32) sndGetPlayingState(door->closeSoundState));
+    }
+#endif
+
     if (door->openSoundState && sndGetPlayingState(door->openSoundState))
     {
         sndDeactivate(door->openSoundState);
@@ -13906,6 +13920,17 @@ void doorPlayOpenSound0(DoorRecord *door) {
     {
         chrobjSndCreatePostEventDefault(soundState, &door->prop->pos);
     }
+
+#ifndef TARGET_N64
+    if (portDoorDbgOn())
+    {
+        fprintf(stderr, "ge: doorsnd play-open door=%p open=%p/open=%d close=%p/close=%d\n",
+                (void *) door, (void *) door->openSoundState,
+                (s32) sndGetPlayingState(door->openSoundState),
+                (void *) door->closeSoundState,
+                (s32) sndGetPlayingState(door->closeSoundState));
+    }
+#endif
 
     sub_GAME_7F053A3C(door);
 }
