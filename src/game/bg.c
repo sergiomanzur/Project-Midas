@@ -4188,14 +4188,14 @@ void bgBuildRoomVtxBounds(s32 roomID)
 
             numvertices = ((((gdl[cmdindex].words.w0 >> 16) & 0xFF) >> 4) & 0xf) + 1;
 
-            vtx = (Vtx *)(SEGMENT_OFFSET(gdl[cmdindex].words.w1) + (u32)vertices);
+            vtx = (Vtx *)((u8 *)vertices + SEGMENT_OFFSET(gdl[cmdindex].words.w1));
 
 #ifndef TARGET_N64
             { /* bring-up (sanitizer sweep catch #6): misaligned Vtx deref -
                * dump the inputs for the first few batches to see whether w1
                * is a segment word, a host pointer, or byte-scrambled */
                 static s32 n;
-                if (((u32) vtx & 3) != 0) {
+                if (((uintptr_t) vtx & 3) != 0) {
                     if (n < 24) {
                         n++;
                         printf("ge: vtxbounds room=%d cmd=%d w0=%08x w1=%08x vertices=%p vtx=%p\n",
@@ -4487,7 +4487,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
     vtxoff = (gdl->words.w0 >> 16) & 0xf;
 #endif
     temp.vertices = (Vertex *)g_BgRoomInfo[roomnum].vertices;
-    vtxbase = (Vertex *)((s32)temp.vertices + (((u32 *)gdl)[1] & 0x00ffffff));
+    vtxbase = (Vertex *)((uintptr_t)temp.vertices + (((u32 *)gdl)[1] & 0x00ffffff));
     temp.roominfo = &g_BgRoomInfo[roomnum];
     bestScore = 0x7FFFFFFF;
     found = 0;
@@ -4565,7 +4565,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
 
                 if (bgTestRayIntersectsBbox(from, dir, (s32 *) (&bboxMin), (s32 *) (&bboxMax)))
                 {
-                    if (intersectRayTriangle((Vertex *)((s32)vtxbase - (0 - (idx[0] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx[1] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx[2] << 4))), (coord3d *) (((uintptr_t) &ptr_bgdata_room_fileposition_list[roomnum].pos)), from, to, dir, &hitbuf))
+                    if (intersectRayTriangle((Vertex *)((uintptr_t)vtxbase + (idx[0] << 4)), (Vertex *)((uintptr_t)vtxbase + (idx[1] << 4)), (Vertex *)((uintptr_t)vtxbase + (idx[2] << 4)), (coord3d *) (((uintptr_t) &ptr_bgdata_room_fileposition_list[roomnum].pos)), from, to, dir, &hitbuf))
                     {
                         tcmd = gdl;
                         dx = ((s32) hitbuf.hitpos.x) - ((s32) from->x);
@@ -4769,7 +4769,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
 
                         if (bgTestRayIntersectsBbox(from, dir, (s32 *) (&bboxMin2), (s32 *) (&bboxMax2)))
                         {
-                            if (intersectRayTriangle((Vertex *)((s32)vtxbase - (0 - (idx2[0] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx2[1] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx2[2] << 4))), (coord3d *) (((uintptr_t) &ptr_bgdata_room_fileposition_list[roomnum].pos)), from, to, dir, &hitbuf))
+                            if (intersectRayTriangle((Vertex *)((uintptr_t)vtxbase + (idx2[0] << 4)), (Vertex *)((uintptr_t)vtxbase + (idx2[1] << 4)), (Vertex *)((uintptr_t)vtxbase + (idx2[2] << 4)), (coord3d *) (((uintptr_t) &ptr_bgdata_room_fileposition_list[roomnum].pos)), from, to, dir, &hitbuf))
                             {
                                 tcmd = gdl;
                                 dx = ((s32) hitbuf.hitpos.x) - ((s32) from->x);
@@ -6553,7 +6553,7 @@ void bgRoomCalcBB(s32 room) // canonical name
     limits.maxY = -0x7fff;
     limits.maxZ = -0x7fff;
 
-    for (; vertices < (Vtx *) ((s32) g_BgRoomInfo[room].vertices + g_BgRoomInfo[room].usize_point_index_binary); vertices++)
+    for (; vertices < (Vtx *) ((uintptr_t) g_BgRoomInfo[room].vertices + g_BgRoomInfo[room].usize_point_index_binary); vertices++)
     {
         for (j = 0; j < 3; j++)
         {

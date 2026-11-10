@@ -3428,10 +3428,18 @@ typedef union
     }
 
     // PROPDEF_WATCH_MENU_OBJECTIVE_TEXT (35)
+    /* PORT: the record is 4 words on the wire (id, menu, reserved+text, next).
+     * objective.c casts it to struct setup_objective_text and writes the chain
+     * pointer at offset 0xC, so the host record must carry a real 8-byte pointer
+     * there. The old 2-word declaration made the LP64 setup expansion allocate
+     * only 16 bytes per record; every write then spilled into the next record
+     * (Cuba's 743-word propdefs were destroyed before the walk reached them). */
     typedef struct WatchMenuObjectiveTextRecord
     {
-        inherits PropDefHeaderRecord;
-        u16      unk4;
+        inherits PropDefHeaderRecord; /* 0x0 */
+        s32      unk4;                /* 0x4 */
+        s32      unk8;                /* 0x8 */
+        struct WatchMenuObjectiveTextRecord *nextentry; /* 0xC */
     } WatchMenuObjectiveTextRecord;
 #define New_CollectObjectRecord(TagID)         \
     {                                          \

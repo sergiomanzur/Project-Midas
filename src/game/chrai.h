@@ -75,11 +75,9 @@ Jump to Routine:
 [p]ointer to another animation routine where processing resumes
 */
 #if UINTPTR_MAX > 0xFFFFFFFFu
-/* TEST BUILD ONLY (64-bit host): the routine tables are u32[] and cannot hold
- * a 64-bit address in a static initializer. Emit a null target so the engine
- * can be built and smoke-tested on real arm64 hardware; animations that jump
- * do nothing. Must be replaced with a real 64-bit representation before any
- * release. */
+/* 64-bit host: the routine tables stay u32[] (the on-disc format). propobj.c
+ * overrides these macros with a table index, so the script can still jump to
+ * another routine without storing a truncated 64-bit pointer. */
 #define MONJUMPTO(p) 0x9, 0
 #else
 #define MONJUMPTO(p) 0x9, p

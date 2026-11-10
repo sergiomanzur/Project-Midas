@@ -346,8 +346,11 @@ static void walk(struct mconv *c, u32 root)
         dataoff = segoff(c->d + off + 0x4);   /* Data */
         nxt = segoff(c->d + off + 0xc);       /* Next */
         child = segoff(c->d + off + 0x14);    /* Child */
-        /* LOD/SWITCH descend through the rodata target, not Child */
-        if (opcode == MODELNODE_OPCODE_LOD && dataoff != 0xFFFFFFFFu) {
+        /* Header/OP20, LOD and SWITCH descend through the rodata target, not Child */
+        if ((opcode == MODELNODE_OPCODE_HEADER || opcode == MODELNODE_OPCODE_OP20)
+            && dataoff != 0xFFFFFFFFu) {
+            child = segoff(c->d + dataoff + 0x4);   /* FirstGroup */
+        } else if (opcode == MODELNODE_OPCODE_LOD && dataoff != 0xFFFFFFFFu) {
             child = segoff(c->d + dataoff + 0x8);   /* Affects */
         } else if (opcode == MODELNODE_OPCODE_SWITCH && dataoff != 0xFFFFFFFFu) {
             child = segoff(c->d + dataoff + 0x0);   /* Controls */

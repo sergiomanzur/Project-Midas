@@ -2488,6 +2488,132 @@ ModelRenderData D_80030B34 = {NULL,
 
 
 //[80030B74	00	Bond]
+#ifdef PORT_LP64
+/* Monitor scripts are u32[] (the cart's on-disc format), so a jump target
+ * cannot be a 64-bit pointer. Store a small table index in MONJUMPTO and let
+ * process_monitor_animation_microcode resolve it. Without this the macro
+ * emitted NULL and the next TVCMD fetch dereferenced a NULL cmdlist (Frigate
+ * and Silo animated monitors crashed a few seconds into the stage). */
+extern u32 monAnim03ThreeWavePattern[];
+extern u32 monAnim04WavePattern[];
+extern u32 monAnim05GreenTextUp[];
+extern u32 monAnim06RedTextDown[];
+extern u32 monAnim07GreenTextDown[];
+extern u32 monAnim08RedBarGraph[];
+extern u32 monAnim09BlueBarGraph[];
+extern u32 monAnim0AGreenBarGraph[];
+extern u32 monAnim11KarlYelling[];
+extern u32 monAnim17RandImageEffect[];
+extern u32 monAnim27RandomEffectScrollRight[];
+extern u32 monAnim28RandomEffectScrollUpFast[];
+extern u32 monAnim29RandomEffectScrollUp[];
+extern u32 monAnim2ARandEffectScrollZoom1[];
+extern u32 monAnim2ARandEffectScrollZoom2[];
+extern u32 monAnim2CRandEffectWaitRoute[];
+extern u32 monAnim2DRandEffectFlash[];
+extern u32 monAnimRadarSub1[];
+extern u32 monAnimRadarSub2[];
+extern u32 monAnimRadarSub3[];
+extern u32 monRandChanceScrollOrZoom[];
+extern u32 monRandChanceScrollOrZoomBlue[];
+extern u32 monRandChanceScrollOrZoomGreen[];
+extern u32 monRandChanceScrollOrZoomRandRGBN[];
+extern u32 monRandChanceScrollOrZoomRed[];
+extern u32 monRandEffectChanceBLUESTARS[];
+extern u32 monRandEffectChanceEARTHFULL1[];
+extern u32 monRandEffectChanceEARTHFULL2[];
+extern u32 monRandEffectChanceEARTHTEXT[];
+extern u32 monRandEffectChanceGALAXY1[];
+extern u32 monRandEffectChanceGALAXY2[];
+extern u32 monRandEffectChanceGALAXY3[];
+extern u32 monRandEffectChanceSHUTTLE1[];
+extern u32 monRandEffectChanceSHUTTLE2[];
+extern u32 monRandEffectChanceTARGETEARTH[];
+
+enum {
+    MON_TARGET_NONE = 0,
+    MON_TARGET_monAnim03ThreeWavePattern,
+    MON_TARGET_monAnim04WavePattern,
+    MON_TARGET_monAnim05GreenTextUp,
+    MON_TARGET_monAnim06RedTextDown,
+    MON_TARGET_monAnim07GreenTextDown,
+    MON_TARGET_monAnim08RedBarGraph,
+    MON_TARGET_monAnim09BlueBarGraph,
+    MON_TARGET_monAnim0AGreenBarGraph,
+    MON_TARGET_monAnim11KarlYelling,
+    MON_TARGET_monAnim17RandImageEffect,
+    MON_TARGET_monAnim27RandomEffectScrollRight,
+    MON_TARGET_monAnim28RandomEffectScrollUpFast,
+    MON_TARGET_monAnim29RandomEffectScrollUp,
+    MON_TARGET_monAnim2ARandEffectScrollZoom1,
+    MON_TARGET_monAnim2ARandEffectScrollZoom2,
+    MON_TARGET_monAnim2CRandEffectWaitRoute,
+    MON_TARGET_monAnim2DRandEffectFlash,
+    MON_TARGET_monAnimRadarSub1,
+    MON_TARGET_monAnimRadarSub2,
+    MON_TARGET_monAnimRadarSub3,
+    MON_TARGET_monRandChanceScrollOrZoom,
+    MON_TARGET_monRandChanceScrollOrZoomBlue,
+    MON_TARGET_monRandChanceScrollOrZoomGreen,
+    MON_TARGET_monRandChanceScrollOrZoomRandRGBN,
+    MON_TARGET_monRandChanceScrollOrZoomRed,
+    MON_TARGET_monRandEffectChanceBLUESTARS,
+    MON_TARGET_monRandEffectChanceEARTHFULL1,
+    MON_TARGET_monRandEffectChanceEARTHFULL2,
+    MON_TARGET_monRandEffectChanceEARTHTEXT,
+    MON_TARGET_monRandEffectChanceGALAXY1,
+    MON_TARGET_monRandEffectChanceGALAXY2,
+    MON_TARGET_monRandEffectChanceGALAXY3,
+    MON_TARGET_monRandEffectChanceSHUTTLE1,
+    MON_TARGET_monRandEffectChanceSHUTTLE2,
+    MON_TARGET_monRandEffectChanceTARGETEARTH,
+};
+
+static u32 *const s_MonScriptTable[] = {
+    NULL,
+    monAnim03ThreeWavePattern,
+    monAnim04WavePattern,
+    monAnim05GreenTextUp,
+    monAnim06RedTextDown,
+    monAnim07GreenTextDown,
+    monAnim08RedBarGraph,
+    monAnim09BlueBarGraph,
+    monAnim0AGreenBarGraph,
+    monAnim11KarlYelling,
+    monAnim17RandImageEffect,
+    monAnim27RandomEffectScrollRight,
+    monAnim28RandomEffectScrollUpFast,
+    monAnim29RandomEffectScrollUp,
+    monAnim2ARandEffectScrollZoom1,
+    monAnim2ARandEffectScrollZoom2,
+    monAnim2CRandEffectWaitRoute,
+    monAnim2DRandEffectFlash,
+    monAnimRadarSub1,
+    monAnimRadarSub2,
+    monAnimRadarSub3,
+    monRandChanceScrollOrZoom,
+    monRandChanceScrollOrZoomBlue,
+    monRandChanceScrollOrZoomGreen,
+    monRandChanceScrollOrZoomRandRGBN,
+    monRandChanceScrollOrZoomRed,
+    monRandEffectChanceBLUESTARS,
+    monRandEffectChanceEARTHFULL1,
+    monRandEffectChanceEARTHFULL2,
+    monRandEffectChanceEARTHTEXT,
+    monRandEffectChanceGALAXY1,
+    monRandEffectChanceGALAXY2,
+    monRandEffectChanceGALAXY3,
+    monRandEffectChanceSHUTTLE1,
+    monRandEffectChanceSHUTTLE2,
+    monRandEffectChanceTARGETEARTH,
+};
+
+#undef MONJUMPTO
+#define MONJUMPTO(p) 0x9, MON_TARGET_##p
+#undef MONJUMPCHANCE
+#define MONJUMPCHANCE(p,x) 0xA, MON_TARGET_##p, x
+#endif /* PORT_LP64 */
+
 u32 monAnim00Bond[] = {
     MONUSEIMAGE(IMGBOND),
     MONHORZSCROLL(0x400, 20),
@@ -7001,6 +7127,24 @@ void save_img_index_to_obj_ani_slot(MonitorRecord *mon, void *unk88)
 }
 
 
+/* Resolve a monitor-script jump target. On 64-bit the u32 script stores an
+ * index into s_MonScriptTable; on 32-bit it is the absolute pointer the cart
+ * stored. A zero target is rejected instead of becoming a NULL cmdlist. */
+static u32 *portMonitorScriptTarget(s32 value)
+{
+    if (value == 0)
+    {
+        return NULL;
+    }
+#ifdef PORT_LP64
+    if ((u32) value < ARRAYCOUNT(s_MonScriptTable))
+    {
+        return s_MonScriptTable[value];
+    }
+#endif
+    return (u32 *) (uintptr_t) (u32) value;
+}
+
 Gfx *process_monitor_animation_microcode(Model *model, ModelNode *node, MonitorRecord *screen, Gfx *gdl, s32 arg4, s32 arg5)
 {
     if (node && (node->Opcode & 0xff) == MODELNODE_OPCODE_DLCOLLISION) 
@@ -7094,12 +7238,32 @@ Gfx *process_monitor_animation_microcode(Model *model, ModelNode *node, MonitorR
                 }
                 break;
             case TVCMD_SETCMDLIST:
-                save_ptr_monitor_ani_code_to_obj_ani_slot(screen, (u32 *) m->time);
+            {
+                u32 *target = portMonitorScriptTarget(m->time);
+
+                if (target != NULL)
+                {
+                    save_ptr_monitor_ani_code_to_obj_ani_slot(screen, target);
+                }
+                else
+                {
+                    screen->offset += 2;
+                }
                 break;
+            }
             case TVCMD_RANDSETCMDLIST:
                 if ((randomGetNext() >> 16) < m->arg2) 
                 {
-                    save_ptr_monitor_ani_code_to_obj_ani_slot(screen, (u32 *) m->time);
+                    u32 *target = portMonitorScriptTarget(m->time);
+
+                    if (target != NULL)
+                    {
+                        save_ptr_monitor_ani_code_to_obj_ani_slot(screen, target);
+                    }
+                    else
+                    {
+                        screen->offset += 3;
+                    }
                 } 
                 else 
                 {

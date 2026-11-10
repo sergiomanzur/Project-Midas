@@ -6,15 +6,13 @@ def repoRoot = rootProject.projectDir.parentFile
 def stagedGameData = file("$buildDir/generated/gameDataAssets")
 def stagedSupportManifest = file("$buildDir/generated/supportManifest")
 
-// 1.0.2 targets a universal APK: one download for every device, arm64-v8a
+// The release targets a universal APK: one download for every device, arm64-v8a
 // (Galaxy S24+, Pixel 7+, Xiaomi Pad 7, ...) plus armeabi-v7a (older phones and
 // handhelds such as the Retroid Pocket). v1.0.1 was built with
 // -PmidasAbis=armeabi-v7a and 64-bit-only devices refused to install it
 // (INSTALL_FAILED_NO_MATCHING_ABIS), so never let a one-ABI release out again:
-// verifyUniversalApk below fails the build if either ABI is missing. The ARM64
-// engine still has to run before this APK can be published (android/README.md,
-// "ARM64 status"); -PmidasAbis=armeabi-v7a still builds the interim 32-bit
-// APK, with a warning.
+// verifyUniversalApk below fails the build if either ABI is missing.
+// -PmidasAbis=armeabi-v7a still builds an interim 32-bit APK, with a warning.
 // x86_64 is a developer-only ABI: it is the same LP64 engine as arm64, so it reproduces 64-bit
 // bugs on the Android emulator. It is never part of the universal release APK.
 def supportedAbis = ["arm64-v8a", "armeabi-v7a", "x86_64"]
@@ -65,9 +63,10 @@ android {
         applicationId "org.midas.android"
         minSdk 26
         targetSdk 34
-        // 2: the universal (arm64-v8a + armeabi-v7a) rebuild of 1.0.1.
-        versionCode 6
-        versionName "1.1.3-android"
+        // 7: the 64-bit stability release (setup records, monitor scripts,
+        // pointer-width pointer arithmetic, touch-overlay shortcut).
+        versionCode 7
+        versionName "1.1.4-android"
 
         // SDL2 and the game are both built for the selected ABI(s) by the root
         // CMake project. The default is universal: both ABIs in one APK.
@@ -236,11 +235,6 @@ if (requestedAbis.containsAll(["arm64-v8a", "armeabi-v7a"])) {
     // assembleRelease is registered by AGP after this script is evaluated, so
     // hook it lazily rather than with tasks.named() here.
     tasks.matching { it.name == "assembleRelease" }.configureEach {
-        doFirst {
-            logger.warn("WARNING: the ARM64 engine is still experimental. The universal APK installs on " +
-                    "64-bit-only devices, but the game process crashes at boot while the 32-bit address model " +
-                    "is migrated (android/README.md, 'ARM64 status'). Do not publish it as a working release.")
-        }
         finalizedBy "verifyUniversalApk"
     }
 } else {

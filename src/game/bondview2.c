@@ -406,7 +406,7 @@ void solo_char_load(void)
     s32                         cursor;
     s32                         size0;
     s32                         size1;
-    s32                         helddst;
+    uintptr_t                   helddst;
     WeaponObjRecord             weapon;
     struct player             **pp;
     s32                         prop;
@@ -666,8 +666,8 @@ void solo_char_load(void)
         {
             if (SOLO_CHAR_SP_BUFFERS())
             {
-                helddst      = cursor;
-                helddst      = ((s32)weaponbuf0) + helddst;
+                helddst      = (uintptr_t) cursor;
+                helddst      = ((uintptr_t) weaponbuf0) + helddst;
                 cursor       = ALIGN64_V3(cursor + PORT_MODEL_RESERVE_C7);
                 pitemheader  = get_ptr_itemheader_in_hand(GUNLEFT);
                 *pitemheader = *PitemZ_entries[prop].header;
@@ -14730,7 +14730,7 @@ void sub_GAME_7F08BEEC(Mtxf *matrices, s32 count)
 
     for (i = 0, j = 0; i < count; i++, j += sizeof(Mtxf))
     {
-        matrix_4x4_multiply_homogeneous(currentPlayerGetViewToWorldMtxf(), (Mtxf *)((u32)matrices + j), &sp40);
+        matrix_4x4_multiply_homogeneous(currentPlayerGetViewToWorldMtxf(), (Mtxf *)((uintptr_t)matrices + j), &sp40);
 
         sp40.m[3][0] -= g_CurrentPlayer->current_model_pos.f[0];
         sp40.m[3][1] -= g_CurrentPlayer->current_model_pos.f[1];

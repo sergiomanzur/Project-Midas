@@ -13,7 +13,6 @@ import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
-import android.widget.Toast;
 
 /**
  * Full-screen touch overlay for Project Midas: two sticks, A/B/X/Y, shoulders,
@@ -25,10 +24,11 @@ import android.widget.Toast;
  * attaches an SDL virtual game controller on the game thread, so the existing
  * controller layouts and options apply unchanged.</p>
  *
- * <p>The small PAD handle is always drawn and always clickable. Tapping it
- * hides/shows the controls; long-pressing it cycles opacity. Both choices are
- * remembered. Hiding cancels every pointer/button and detaches the virtual
- * controller, while a real Bluetooth/USB pad keeps working.</p>
+ * <p>There is no on-screen toggle: the overlay no longer puts a button next to
+ * the shoot control. MidasActivity toggles it with Ctrl+Shift+T (keyboard) and
+ * a three-finger tap (touch), and its visibility is remembered. Hiding cancels
+ * every pointer/button and detaches the virtual controller, while a real
+ * Bluetooth/USB pad keeps working.</p>
  */
 public final class TouchControlsView extends View {
     private static final String PREFS = "midas_touch_controls";
@@ -40,18 +40,12 @@ public final class TouchControlsView extends View {
     private static final int ID_TRIGGER_LEFT = 3;
     private static final int ID_TRIGGER_RIGHT = 4;
     private static final int ID_BUTTON_BASE = 100;
-    private static final int ID_TOGGLE = 200;
-
-    private static final long LONG_PRESS_MS = 650L;
-
-    private static final float[] OPACITIES = { 1.0f, 0.75f, 0.5f, 0.35f };
 
     private final SharedPreferences mPrefs;
     private final Paint mFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mText = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-    private final RectF mToggle = new RectF();
     private final RectF[] mButtonRect = new RectF[15];
     private final RectF[] mTriggerRect = new RectF[2];
     private final float[] mStickBaseX = new float[2];
@@ -69,11 +63,9 @@ public final class TouchControlsView extends View {
     private float mDensity;
     private float mStickRadius;
     private float mFaceRadius;
-    private float mToggleSize;
     private float mPillHeight;
     private float mPillWidth;
     private float mGap;
-    private float mTouchSlop;
     private int mInsetLeft;
     private int mInsetTop;
     private int mInsetRight;
@@ -84,14 +76,9 @@ public final class TouchControlsView extends View {
     private float mOpacity;
     private int mLeftPointer = -1;
     private int mRightPointer = -1;
-    private int mTogglePointer = -1;
 
     private static final class Pointer {
         int control;
-        float downX;
-        float downY;
-        long downTime;
-        boolean moved;
     }
 
     public TouchControlsView(Context context) {
@@ -112,7 +99,6 @@ public final class TouchControlsView extends View {
         mStroke.setStrokeWidth(dp(2f));
         mText.setTextAlign(Paint.Align.CENTER);
         mText.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        mTouchSlop = dp(12f);
 
         setClickable(true);
         setFocusable(true);
@@ -124,10 +110,6 @@ public final class TouchControlsView extends View {
         return value * mDensity;
     }
 
-    private static float clamp01(float v) {
-        return v < 0f ? 0f : (v > 1f ? 1f : v);
-    }
-
     private static float clampOpacity(float v) {
         return v < 0.35f ? 0.35f : (v > 1f ? 1f : v);
     }
@@ -137,17 +119,12 @@ public final class TouchControlsView extends View {
         return (color & 0x00ffffff) | (alpha << 24);
     }
 
-    private int aStrong(int color) {
-        int alpha = (int) (Color.alpha(color) * Math.max(mOpacity, 0.85f));
-        return (color & 0x00ffffff) | (alpha << 24);
-    }
-
     /** True while the visible overlay owns the virtual SDL pad. */
     public boolean isTouchControlsVisible() {
         return mControlsVisible;
     }
 
-    /** Show or hide the controls. The PAD toggle remains visible either way. */
+    /** Show or hide the controls. Visibility is remembered across launches. */
     public void setTouchControlsVisible(boolean visible) {
         if (mControlsVisible == visible) {
             return;
@@ -165,7 +142,12 @@ public final class TouchControlsView extends View {
                 : "Touch controls hidden");
     }
 
-    /** 0.35 (very dim) to 1.0; long-press the PAD handle to cycle. */
+    /** Toggle the overlay from a keyboard shortcut or gesture. */
+    public void toggleTouchControls() {
+        setTouchControlsVisible(!mControlsVisible);
+    }
+
+    /** 0.35 (very dim) to 1.0. Kept for future settings UI. */
     public void setControlsOpacity(float opacity) {
         mOpacity = clampOpacity(opacity);
         mPrefs.edit().putFloat(KEY_OPACITY, mOpacity).apply();
@@ -182,15 +164,13 @@ public final class TouchControlsView extends View {
     }
 
     private void updateAccessibility() {
-        setContentDescription(mControlsVisible
-                ? "Hide touch controls"
-                : "Show touch controls");
+        setContentDescription("Touch controls overlay");
     }
 
     @Override
     public boolean performClick() {
         super.performClick();
-        setTouchControlsVisible(!mControlsVisible);
+        toggleTouchControls();
         return true;
     }
 
@@ -274,8 +254,8 @@ public final class TouchControlsView extends View {
         /* Layout: everything hugs the edges so the centre of the screen stays
          * clear for the game. Left thumb owns MOVE plus the d-pad above it,
          * right thumb owns LOOK plus the face cluster above it, shoulders sit in
-         * the top corners, START/BACK are small and horizontal at top centre and
-         * the overlay toggle is tucked under RT. */
+         * the top corners, and START/BACK are small and horizontal at top
+         * centre. There is deliberately no extra button near the face cluster. */
         final float margin = dp(10f);
         final float safeL = mInsetLeft + margin;
         final float safeT = mInsetTop + margin;
@@ -289,7 +269,6 @@ public final class TouchControlsView extends View {
         mGap = Math.max(dp(6f), Math.min(dp(12f), base * 0.03f));
         mStickRadius = clamp(base * 0.115f, dp(50f), dp(92f));
         mFaceRadius = clamp(base * 0.048f, dp(19f), dp(30f));
-        mToggleSize = dp(38f);
         mPillHeight = clamp(base * 0.088f, dp(29f), dp(40f));
         mPillWidth = clamp(mPillHeight * 1.7f, dp(50f), dp(76f));
 
@@ -316,10 +295,6 @@ public final class TouchControlsView extends View {
                 centreX - mGap * 0.5f - startW, safeT + dp(2f), startW, mPillHeight);
         setRect(AndroidInput.BUTTON_START,
                 centreX + mGap * 0.5f, safeT + dp(2f), startW, mPillHeight);
-
-        /* Overlay toggle: out of the play area, under the right shoulder pair. */
-        mToggle.set(safeR - mToggleSize, safeT + mPillHeight + mGap,
-                safeR, safeT + mPillHeight + mGap + mToggleSize);
 
         /* D-pad: left edge, above the MOVE stick. Face cluster: right edge,
          * above the LOOK stick. The arm is more than two radii so the round
@@ -363,10 +338,6 @@ public final class TouchControlsView extends View {
         mButtonRect[button].set(cx - radius, cy - radius, cx + radius, cy + radius);
     }
 
-    private boolean hitToggle(float x, float y) {
-        return mToggle.contains(x, y);
-    }
-
     private int hitControl(float x, float y) {
         if (!mControlsVisible) {
             return -1;
@@ -399,13 +370,6 @@ public final class TouchControlsView extends View {
 
     private void acquire(int pointerId, float x, float y) {
         if (!mControlsVisible) {
-            if (hitToggle(x, y)) {
-                addPointer(pointerId, ID_TOGGLE, x, y);
-            }
-            return;
-        }
-        if (hitToggle(x, y)) {
-            addPointer(pointerId, ID_TOGGLE, x, y);
             return;
         }
         final int control = hitControl(x, y);
@@ -454,13 +418,7 @@ public final class TouchControlsView extends View {
     private void addPointer(int id, int control, float x, float y) {
         Pointer p = new Pointer();
         p.control = control;
-        p.downX = x;
-        p.downY = y;
-        p.downTime = android.os.SystemClock.uptimeMillis();
         mPointers.put(id, p);
-        if (control == ID_TOGGLE) {
-            mTogglePointer = id;
-        }
     }
 
     private void updateStick(int stick, float x, float y) {
@@ -506,17 +464,6 @@ public final class TouchControlsView extends View {
                 AndroidInput.setAxis(AndroidInput.AXIS_RIGHT_X, 0f);
                 AndroidInput.setAxis(AndroidInput.AXIS_RIGHT_Y, 0f);
                 break;
-            case ID_TOGGLE:
-                mTogglePointer = -1;
-                if (!cancelled) {
-                    long held = android.os.SystemClock.uptimeMillis() - p.downTime;
-                    if (held >= LONG_PRESS_MS && !p.moved) {
-                        cycleOpacity();
-                    } else if (!p.moved) {
-                        performClick();
-                    }
-                }
-                break;
             case ID_TRIGGER_LEFT:
             case ID_TRIGGER_RIGHT: {
                 final int trigger = p.control == ID_TRIGGER_LEFT ? 0 : 1;
@@ -542,25 +489,10 @@ public final class TouchControlsView extends View {
         invalidate();
     }
 
-    private void cycleOpacity() {
-        int next = 0;
-        for (int i = 0; i < OPACITIES.length; i++) {
-            if (Math.abs(OPACITIES[i] - mOpacity) < 0.02f) {
-                next = (i + 1) % OPACITIES.length;
-                break;
-            }
-        }
-        setControlsOpacity(OPACITIES[next]);
-        Toast.makeText(getContext(),
-                "Touch opacity " + Math.round(mOpacity * 100f) + "%",
-                Toast.LENGTH_SHORT).show();
-    }
-
     private void cancelAllPointers() {
         mPointers.clear();
         mLeftPointer = -1;
         mRightPointer = -1;
-        mTogglePointer = -1;
         for (int i = 0; i < mButtonRefs.length; i++) {
             if (mButtonRefs[i] != 0) {
                 mButtonRefs[i] = 0;
@@ -585,7 +517,7 @@ public final class TouchControlsView extends View {
         switch (action) {
             case MotionEvent.ACTION_DOWN: {
                 final int control = hitControl(event.getX(), event.getY());
-                if (control < 0 && !hitToggle(event.getX(), event.getY())) {
+                if (control < 0) {
                     // Not ours: let the SDL surface below receive the gesture.
                     return false;
                 }
@@ -610,11 +542,6 @@ public final class TouchControlsView extends View {
                         updateStick(0, x, y);
                     } else if (p.control == ID_RIGHT_STICK) {
                         updateStick(1, x, y);
-                    } else if (p.control == ID_TOGGLE) {
-                        if (!p.moved
-                                && Math.abs(x - p.downX) + Math.abs(y - p.downY) > mTouchSlop) {
-                            p.moved = true;
-                        }
                     }
                 }
                 break;
@@ -644,7 +571,6 @@ public final class TouchControlsView extends View {
             drawSticks(canvas);
             drawButtons(canvas);
         }
-        drawToggle(canvas);
     }
 
     private void drawSticks(Canvas canvas) {
@@ -729,17 +655,5 @@ public final class TouchControlsView extends View {
         canvas.drawText(label, cx, cy + radius * (label.length() > 1 ? 0.27f : 0.35f), mText);
     }
 
-    private void drawToggle(Canvas canvas) {
-        final float radius = mToggle.height() * 0.5f;
-        mFill.setColor(aStrong(mControlsVisible ? 0xcc28648c : 0xcc202028));
-        canvas.drawRoundRect(mToggle, radius, radius, mFill);
-        mStroke.setColor(aStrong(0xddffffff));
-        mStroke.setStrokeWidth(dp(1.8f));
-        canvas.drawRoundRect(mToggle, radius, radius, mStroke);
-        mText.setColor(aStrong(0xffffffff));
-        mText.setTextSize(mToggle.height() * 0.32f);
-        canvas.drawText(mControlsVisible ? "HIDE" : "PAD",
-                mToggle.centerX(), mToggle.centerY() + mToggle.height() * 0.12f, mText);
-    }
 }
 

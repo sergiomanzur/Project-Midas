@@ -1113,14 +1113,14 @@ Gfx *constructor_menu19_spectrum(Gfx *DL);
 void disable_all_switches(Model *arg0);
 void set_item_visibility_in_objinstance(Model* objinstance, s32 item, s32 mode);
 void set_cursor_to_stage_solo(LEVEL_SOLO_SEQUENCE level);
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, s32 arg6, s32 arg7);
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, struct fontchar *chars, struct font *font);
 void setCursorPOSforMode(int mode);
 void set_cursor_pos_difficulty(int difficulty);
 
 // end forward declarations.
 
 
-Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, s32 second_font_table, s32 first_font_table, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
+Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, struct fontchar *chars, struct font *font, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
 {
     if (j_text_trigger != 0)
     {
@@ -1129,8 +1129,8 @@ Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, s32 second_font_table, s
             x,
             y,
             text,
-            second_font_table,
-            first_font_table,
+            chars,
+            font,
             arg6,
             (textglowR.r << 0x18) | (textglowG.r << 0x10) | (textglowB.r << 8) | textglowA.r,
             view_x,
@@ -1145,8 +1145,8 @@ Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, s32 second_font_table, s
             x,
             y,
             text,
-            second_font_table,
-            first_font_table,
+            chars,
+            font,
             arg6,
             view_x,
             view_y,
@@ -1801,7 +1801,7 @@ void interface_menu00_legalscreen(void)
 /**
  * Render a string of standard text on the legal screen e.g. "TWYCROSS BOARD OF GAME CLASSIFICATION"
  */
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, s32 arg6, s32 arg7)
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, struct fontchar *chars, struct font *font)
 {
     s32 sp4C;
     s32 sp48;
@@ -1810,11 +1810,11 @@ Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halig
 
     sp48 = 0;
     sp4C = 0;
-    textMeasure(&sp4C, &sp48, text, ptrFontZurichBoldChars, ptrFontZurichBold, 0);
+    textMeasure(&sp4C, &sp48, text, chars, font, 0);
     x = arg1 - ((s32) (halign * sp48) / 2);
     y = arg2 - ((s32) (valign * sp4C) / 2);
 
-    return textRender(dl, &x, &y, text, arg6, arg7, -1, viGetX(), viGetY(), 0, 0);
+    return textRender(dl, &x, &y, text, chars, font, -1, viGetX(), viGetY(), 0, 0);
 }
 
 
@@ -1897,7 +1897,7 @@ Gfx *constructor_menu00_legalscreen(Gfx *DL)
 
         sprintf(line, "Project Midas %s: Build %s\n", portPlatformName(), portBuildString());
         DL = display_aligned_white_text_to_screen(DL, 220, 16, CENTER_ALIGN, CENTER_ALIGN, (u8 *) line,
-                                                  (s32) ptrFontZurichBoldChars, (s32) ptrFontZurichBold);
+                                                  ptrFontZurichBoldChars, ptrFontZurichBold);
     }
 #endif
 

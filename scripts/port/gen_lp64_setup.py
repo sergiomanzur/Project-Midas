@@ -72,6 +72,15 @@ TYPES = [
     (0x2E, 'CAMERAPOS', 'CutsceneRecord'),
 ]
 
+# Some setup records are smaller than the runtime struct the game casts them to.
+# objective.c's set_parent_cur_obj_enter_room() stores an 8-byte `next` at +0x10,
+# but the cart's type-32 record is only 4 words. Reserve two extra host words so
+# that write cannot run into the next propdef on 64-bit. (Type 35's chain pointer
+# is inside its wire record, so its struct carries it directly.)
+MIN_HOST_WORDS = {
+    0x20: 6,  # PROPDEF_OBJECTIVE_ENTER_ROOM
+}
+
 DEFINES = ['-D__USE_MINGW_ANSI_STDIO=0', '-DGE_MODDED_CHEATS=1', '-DAVOID_UB', '-DBUGFIX_R0',
            '-DLANG_US', '-DNONMATCHING', '-DREFRESH_NTSC', '-DVERSION_US', '-D_LANGUAGE_C']
 INCLUDES = ['', 'include', 'include/ultra64', 'include/PR', 'src', 'src/game', 'src/inflate',
@@ -231,6 +240,7 @@ def main():
             if key not in seen:
                 seen[key] = build(d32[struct], d64[struct], struct, d32, d64, wire_words)
             ops, h = seen[key]
+            h = max(h, MIN_HOST_WORDS.get(tid, h))
         else:
             struct = '(raw)'
             ops = [[0, 0, wire_words * 4, 0]]

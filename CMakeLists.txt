@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
 project(ge007 C)
 
-# GoldenEye PC port build (docs/port/PORT-PLAN.md). Built 32-bit first, which
-# defuses the codebase's pointer<->s32 casts and keeps Gfx 8 bytes.
+# GoldenEye PC port build (docs/port/PORT-PLAN.md). The desktop lane is 32-bit,
+# which defuses the codebase's pointer<->s32 casts and keeps Gfx 8 bytes.
 # The N64 ROM build stays on the classic Makefile; this file also builds the
 # Android shell library (libmain.so) with SDL2 + GLES3 for arm64-v8a and
 # armeabi-v7a. The shipped APK is universal: both ABIs in one file.
 #
-# Android is NOT a parity claim: the 32-bit-only layout contract in the asset
-# lane and the interpreter's pointer<->s32 assumptions need their own audit.
+# The ARM64 lane uses the LP64 model: ROM-served setup/model/bank data is
+# converted to host structs, and game-owned memory stays in the low 32-bit
+# arena because display lists and the audio microcode still carry 32-bit
+# addresses. The compiled-in asset lane remains i386-only.
 
 # Android: pinned SDL2 source is added before the root compile flags below, so
 # the dependency is not built with GE's decompiled-code options/definitions.
@@ -28,8 +30,8 @@ if(ANDROID)
     elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
         set(GE_ANDROID_ARM32_EXPERIMENTAL ON)
         message(WARNING
-            "Android ABI armeabi-v7a is EXPERIMENTAL (32-bit bring-up). "
-            "arm64-v8a remains the primary porting target; neither ABI is release-ready.")
+            "Android ABI armeabi-v7a is the 32-bit compatibility lane. "
+            "arm64-v8a is the primary target; armeabi-v7a remains experimental.")
     else()
         message(FATAL_ERROR
             "Unsupported Android ABI '${CMAKE_ANDROID_ARCH_ABI}'. "

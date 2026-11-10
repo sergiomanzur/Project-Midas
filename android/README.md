@@ -3,19 +3,12 @@
 This directory is the Gradle shell around the shared native port, based on
 [Project Midas](https://github.com/murkantor/project-midas).
 
-The published 1.0.x APKs are **32-bit (`armeabi-v7a`) only**. They run on any
-device that still supports 32-bit apps (most pre-2024 phones, the Retroid
-Pocket, ...) and are refused by 64-bit-only devices (Galaxy S24+, Pixel 7+,
-Xiaomi Pad 7, ...) with `INSTALL_FAILED_NO_MATCHING_ABIS`, which the OEM
-installer shows as "App not installed" or "app is not compatible".
-
-The 1.0.2 build defaults to a **universal APK** (`arm64-v8a` + `armeabi-v7a`).
-Packaging, signing and installation on 64-bit-only devices work. The ARM64
-engine now boots through ROM data, textures, fonts and input and loads a stage;
-it then dies when the first menu model is parsed (`ModelNode` is a 24-byte
-32-bit structure on the wire, 48 bytes as a host struct). See "ARM64 status"
-below. Do not publish the universal APK until the asset-struct conversion is
-finished.
+The current build defaults to a **universal APK** (`arm64-v8a` + `armeabi-v7a`),
+so 64-bit-only devices (Galaxy S24+, Pixel 7+, Xiaomi Pad 7, ...) install the
+same download as older 32-bit-capable phones and handhelds. The 64-bit engine
+loads ROM data, models, fonts and audio banks, and has been smoke-tested through
+every solo stage and the multiplayer arenas on an Android 16 KB-page x86_64
+emulator (the same LP64 code path as arm64). See "64-bit status" below.
 
 ## Requirements
 
@@ -77,105 +70,41 @@ different key ("App not installed"). Override with `MIDAS_KEYSTORE`,
 a real release key; because the certificate changes, existing users have to
 uninstall v1.0.1 once before installing a build signed with the new key.
 
-## ARM64 status
+## 64-bit status
 
-The universal packaging is done; the ARM64 engine is the remaining work. On a
-Galaxy S24 Ultra (SM-S928B, Android 16, `arm64-v8a` only) and on a 16 KB-page
-arm64 emulator image the universal APK installs and the ROM launcher works. The
-engine now gets through `bossInitMainthreadData` (ROM data, textures, fonts,
-input), loads a stage, converts and draws the menu models, and reaches the
-Rareware-logo intro; it currently dies inside that intro (`guMtxF2L` writing
-through `matrixBufferRareLogo0`, which changes to `0x10000` between the first
-and second frame - something overwrites that global, next lead).
+The ARM64 engine now boots through ROM data, textures, fonts, models and audio,
+loads every solo stage and the multiplayer arenas, and runs gameplay on a
+16 KB-page Android 16 x86_64 emulator (same LP64 code as arm64). Physical arm64
+phones still need the usual device pass, but the boot/menu/stage-load crashes
+reported after the 64-bit move are fixed.
 
-Fixed on the way to that point (all 64-bit-only defects; 32-bit behaviour is
-unchanged):
+The last 64-bit correctness pass fixed:
 
-- `port/src/pcsched.c` — arenas must stay inside the 32-bit-addressable range.
-  `portAllocHighRaw` now requires `0x10000000 <= addr < 0x80000000` on 64-bit
-  hosts and uses `MAP_FIXED_NOREPLACE`, otherwise mmap's hint is advisory and
-  the first `romCopy` truncates the ROM pointer.
-- `port/src/libultra_shim.c` + `include/PR/os.h` — `osPiStartDma` /
-  `osPiRawStartDma` take a `uintptr_t devAddr` (ROM "addresses" are host
-  pointers here).
-- `port/src/segments.c` + `port/src/animdata.c` — the animation segments are
-  allocated in the low arena (not `.bss`), both animation tables are walked at
-  pointer width, and `struct ModelAnimation` stores `bitDescriptors`/`bitStream`
-  as 32-bit low-arena addresses.
-- `src/game/initanitable.c` — `animation_table_ptrs1` is a pointer array (it was
-  `s32[]`, which made the shared walker overrun into `ptrs2`).
-- `src/game/image_bank.c` — image/DL rebasing is pointer-width; `texSetBitstring`
-  takes a `uintptr_t`.
-- `src/game/image.c` — `texLoad` aligns its stack buffer via `uintptr_t`, not
-  `u32`.
-- `src/game/textrelated.c` + `struct fontchar` — `pixeldata` is a 32-bit
-  low-arena address (the font record is 24 bytes on the wire).
-- `src/game/rsp.c` — the two `g_gfxTaskSettings` pointers are toggled with a
-  compare-and-swap, not a `u32` XOR.
-- `src/sched.c` — `osScAddClient` no longer writes `c[1].next` past the client.
-- `src/boss.c` — `rspReplyMsg` is an `OSMesg` (a stack pointer was truncated to
-  `s32`), and the gfx message queue is rebuilt after a stage load (its control
-  block is still clobbered by the load; the overwrite is not yet found).
-- `port/src/model64.c` (new) — converts a ROM model (24-byte wire nodes and
-  rodata with 32-bit link words) into a host `ModelNode`/`ModelRoData` graph
-  allocated from `MEMPOOL_STAGE`; vertex/DL/image data stays in the wire image
-  and `BaseAddr`/`Vertices`/`Primary`/... point into it. `load_object_fill_header`
-  calls it on 64-bit instead of `sub_GAME_7F075A90`.
-- `src/game/tex.c` — `texLoadFromGdl` reads 8-byte wire commands into a local
-  host `Gfx` and writes 16-byte host commands; `texCopyGdls` is byte-addressed.
-  `portConvertModelGdl` (objecthandler_2.c) scans wire lists and recursively
-  expands nested `G_DL` targets.
-- `port/src/wiredl.c` (new) — registry of 8-byte-command ranges (ROM data
-  segment, font DL copy, every model image). `gfx_run_dl` expands such a list
-  into a cached host `Gfx` array before walking it, which covers font/logo/
-  gun-barrel lists that are never converted by the texture pass.
-- `src/game/model.c` — `modelGetNodeRwData` addresses the rwdata buffer in
-  bytes (indices count 4-byte cells; `data + index` strided by 8 on 64-bit) and
-  skips the walk when a model has no rwdata buffer. `modelAttachPart` does the
-  same byte addressing.
-- `src/game/objecthandler.h` — `ModelSlot`/`AnimModelSlot` are cast to `Model*`;
-  on 64-bit their mirrored fields (`unk08`=obj, `unk0c`=render_pos,
-  `unk10`=datas) are real pointers at Model's offsets, and the structs are at
-  least `sizeof(Model)` so a Model write cannot run into the next slot.
-- `port/src/pcsched.c` — memp gets its own 64 MB mapping
-  (`portAllocHighDedicated`); taking it from the shared high arena consumed all
-  of it and later `portAllocHigh` calls failed.
-- `include/PR/os.h` + `port/src/libultra_shim.c` — `osVirtualToPhysical`,
-  `OS_K0_TO_PHYSICAL`, `OS_PHYSICAL_TO_K0` are pointer-width (they feed display
-  list words and segment registers).
-- `src/game/title.c` — `virtualaddress` (rareware-logo segment base) is
-  `uintptr_t`, not `s32`; its setter and the gun-barrel entry point have real
-  prototypes in `title.h`.
-- `port/fast3d/gfx_pc.cpp` — a matrix load whose resolved address is below
-  `0x10000` is skipped instead of crashing (temporary; the producer is still to
-  be found).
+- **Setup records.** The N64-layout prop-definition stream is expanded to host
+  structs with the generated field map. `WATCH_MENU_OBJECTIVE_TEXT` (type 35)
+  was only 16 bytes in the host array, so `setup_briefing_text_entry_parent`
+  wrote its 8-byte `next` pointer into the following record. Every stage with
+  watch-briefing text then walked a corrupted propdefs array; Cuba crashed on
+  stage load and other stages crashed later. Type 35 is now a full 24-byte
+  record, and `OBJECTIVE_ENTER_ROOM` reserves its runtime `next` pointer too.
+- **Monitor scripts.** 64-bit `MONJUMPTO`/`MONJUMPCHANCE` used to emit a null
+  target. The first animated monitor that took a jump set `cmdlist = NULL` and
+  the next command fetch crashed (Frigate and Silo). The scripts now store a
+  small target-table index; `process_monitor_animation_microcode` resolves it.
+- **Pointer arithmetic.** `bg.c`, `lightfixture.c`, `image.c`, `bondview2.c`,
+  `explosion.c` and `mpbots.c` no longer cast host pointers to `u32`/`s32`
+  before adding offsets. Font table parameters in `front.c`/`options.c` are
+  pointer-typed instead of `s32`.
+- **Model OP20.** Header-style root nodes (opcode 0x14) are now converted and
+  walked like opcode 1 instead of losing their child group.
+- **Audio.** The AL banks and Rare sequence table are converted into host
+  structs in `port/src/bank64.c`; the mixer reads low-arena buffers and the
+  boot-switch mute is only used when a bank genuinely cannot load.
 
-Temporary bring-up switches, must be removed before a release:
-
-- `src/game/chrai.h` — 64-bit `MONJUMPTO`/`MONJUMPCHANCE` emit a null target so
-  the engine compiles; animations that jump do nothing.
-- `src/music.c`, `src/snd.c`, `port/src/audio_pc.c` — the AL bank/sequence data
-  is a 32-bit structure tree, so arm64 builds the synth/players with an empty
-  host-format bank and mute playback (`g_sndBootswitchSound`). No sound yet.
-
-Remaining work, in the order a run hits it:
-
-1. **Rareware-logo intro (current crash).** `matrixBufferRareLogo0` is valid on
-   the first frame and reads `0x10000` on the second; `load_display_rare_logo`
-   then calls `guPerspective` with it. The global is being overwritten - find the
-   writer (the `alloc_intro_matrices` buffers and every `Mtx *` global in
-   title.c are candidates).
-2. **Display lists.** Runtime-built lists are host `Gfx` (16 bytes) and the
-   wire lists are expanded now, but check every remaining `Gfx` producer for
-   `(u32)` casts (`OS_K0_TO_PHYSICAL`-style) that truncate on 64-bit.
-3. **Audio.** Convert `ALBankFile`/`ALInstrument`/`ALSound`/`ALWaveTable` and
-   the Rare sequence table into host structs (or 32-bit address fields), then
-   drop the mute/empty-bank switches.
-4. **The rest of the 32-bit address model:** `src/game/ob.c`
-   (`(u32) offset + 0x0F000000`, `(u32 *) cand`), `src/game/bg.c:1044`
-   (`ptr_bg_data = (s32) mempAllocBytesInBank(...)`), `src/game/bondview_r.c:126`,
-   `port/src/romdata.c:929` (host pointers into 32-bit text slots), and the
-   remaining `romfile_*` converters.
+Known limits: `GE_STAGE=<mp-arena>` launches a *solo* setup that does not exist
+for Complex/Temple/Caves/Library/Stack/Basement; use `GE_MP=<arena>` for those.
+Physical-device profiling and the 32-bit-only parity lane remain separate from
+the 64-bit fixes.
 
 ## ROM handling
 
@@ -212,8 +141,9 @@ Optionally set `MIDAS_TEST_ROM_PATH` to your own local, stock USA `.z64` file an
 use `--rerun-tasks` to exercise real ROM validation and all byte-order conversions.
 The file is read locally and is never bundled or uploaded.
 
-The touch overlay has a persistent HIDE/PAD toggle and long-press opacity control.
-Its input is released on hide, resize, focus loss and pause. A virtual SDL pad
-feeds the existing controller backend; touch supplements player 1 rather than
-displacing a physical controller. Device input, graphics, audio and all PC options
-still require end-to-end verification after the native engine builds.
+The touch overlay has no on-screen hide button (it used to sit beside the shoot
+control). Hide/show it with **Ctrl+Shift+T** on a keyboard, or with a
+**three-finger tap** on touch-only devices. Visibility is remembered. Its input
+is released on hide, resize, focus loss and pause. A virtual SDL pad feeds the
+existing controller backend; touch supplements player 1 rather than displacing a
+physical controller.

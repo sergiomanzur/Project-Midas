@@ -608,7 +608,7 @@ static s32 modMpBotsEnsureCharacterModelLoaded(s32 modelnum)
         struct tex *oldtexhead;
         u8 *loadend;
 
-        cursor = (u8 *)(((u32)g_ModMpBotModelCacheCursor + 0xfU) & ~0xfU);
+        cursor = (u8 *)(((uintptr_t)g_ModMpBotModelCacheCursor + 0xfU) & ~(uintptr_t)0xfU);
         /* Reserve a transient upper workspace for the model loader's
          * compressed input and GDL relocation.  Texture allocations during
          * the load must stay ABOVE loadend; future model loads must stay
@@ -3444,6 +3444,27 @@ static s32 modMpBotsPdMeleeImpact(s32 slot)
     direction.x = target->pos.x - runtime->chr->prop->pos.x;
     direction.y = target->pos.y - runtime->chr->prop->pos.y;
     direction.z = target->pos.z - runtime->chr->prop->pos.z;
+
+    /* Melee passes the same "direction" convention as a gun shot (a unit
+     * vector): handles_shot_actors feeds it to record_damage_kills, which adds
+     * 2*vector to Bond's bondshotspeed, and to the death knockback. Leaving it
+     * as the raw bot->target delta (up to the 70-115 unit reach) launched the
+     * victim across the room. */
+    {
+        const f32 len = sqrtf(direction.x * direction.x
+                            + direction.y * direction.y
+                            + direction.z * direction.z);
+
+        if (len > 0.0001f) {
+            direction.x /= len;
+            direction.y /= len;
+            direction.z /= len;
+        } else {
+            direction.x = 0.0f;
+            direction.y = 0.0f;
+            direction.z = 1.0f;
+        }
+    }
 
     if (target->type == PROP_TYPE_VIEWER)
         modMpBotsDamageViewer(slot, target, ITEM_FIST, &direction);

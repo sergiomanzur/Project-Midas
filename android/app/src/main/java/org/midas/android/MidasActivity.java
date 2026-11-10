@@ -2,8 +2,13 @@ package org.midas.android;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import org.libsdl.app.SDLActivity;
 
@@ -15,6 +20,17 @@ import java.io.File;
  */
 public class MidasActivity extends SDLActivity {
     private TouchControlsView controls;
+
+    /* Keyboard shortcut: Ctrl+Shift+T. Touch fallback: three-finger tap.
+     * The old on-screen HIDE button sat beside the shoot button, so it was
+     * removed; these two gestures are the only way to toggle the overlay. */
+    private boolean overlayGestureCandidate;
+    private int overlayGestureMaxPointers;
+    private long overlayGestureDownTime;
+    private float overlayGestureDownX;
+    private float overlayGestureDownY;
+    private boolean overlayGestureMoved;
+
     @Override
     protected String[] getLibraries() {
         return new String[]{"SDL2", "main"};
@@ -24,6 +40,91 @@ public class MidasActivity extends SDLActivity {
     protected String[] getArguments() {
         File rom = RomStore.romFile(this);
         return new String[]{"--rom-file", rom.getAbsolutePath()};
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (controls != null
+                && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0
+                && event.getKeyCode() == KeyEvent.KEYCODE_T
+                && event.isCtrlPressed()
+                && event.isShiftPressed()) {
+            toggleTouchOverlay();
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        trackOverlayToggleGesture(event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void toggleTouchOverlay() {
+        if (controls == null) {
+            return;
+        }
+        controls.toggleTouchControls();
+        Toast.makeText(this,
+                controls.isTouchControlsVisible()
+                        ? "Touch controls shown"
+                        : "Touch controls hidden - Ctrl+Shift+T or three-finger tap to show",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /*
+     * Observe every touch without consuming it: the SDL surface keeps receiving
+     * the same gesture. A quick, still three-finger tap toggles the overlay, so
+     * touch-only devices can bring it back after it has been hidden.
+     */
+    private void trackOverlayToggleGesture(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                overlayGestureCandidate = true;
+                overlayGestureMaxPointers = 1;
+                overlayGestureDownTime = SystemClock.uptimeMillis();
+                overlayGestureDownX = event.getX();
+                overlayGestureDownY = event.getY();
+                overlayGestureMoved = false;
+                break;
+
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (event.getPointerCount() > overlayGestureMaxPointers) {
+                    overlayGestureMaxPointers = event.getPointerCount();
+                }
+                break;
+
+            case MotionEvent.ACTION_MOVE: {
+                if (!overlayGestureMoved) {
+                    final float slop =
+                            ViewConfiguration.get(this).getScaledTouchSlop() * 2.0f;
+                    if (Math.abs(event.getX() - overlayGestureDownX) > slop
+                            || Math.abs(event.getY() - overlayGestureDownY) > slop) {
+                        overlayGestureMoved = true;
+                    }
+                }
+                break;
+            }
+
+            case MotionEvent.ACTION_UP:
+                if (overlayGestureCandidate
+                        && overlayGestureMaxPointers >= 3
+                        && !overlayGestureMoved
+                        && SystemClock.uptimeMillis() - overlayGestureDownTime < 600L) {
+                    toggleTouchOverlay();
+                }
+                overlayGestureCandidate = false;
+                break;
+
+            case MotionEvent.ACTION_CANCEL:
+                overlayGestureCandidate = false;
+                break;
+
+            default:
+                break;
+        }
     }
 
     @Override

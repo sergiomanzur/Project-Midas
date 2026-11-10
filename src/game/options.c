@@ -3729,8 +3729,8 @@ Gfx *draw_abort_cancel_confirm(Gfx *gdl)
     s32 sp64;
     s32 sp60;
 
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
     s32 sp54;
     s32 sp50;
     s32 sp4C;
@@ -3809,8 +3809,8 @@ Gfx *draw_text_mission_status(Gfx *gdl)
     s32 sp60;
     s32 sp5C;
     s32 sp58;
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
     s32 sp4C;
     s32 joffset;
 
@@ -3866,8 +3866,8 @@ Gfx *draw_text_q_watch_v201_beta(Gfx *gdl)
     s32 sp4C;
     s32 sp48;
     s32 sp44;
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
     s32 joffset;
 
     txtptr = langGet(getStringID(LOPTIONS, OPTION_STR_2B_QWATCHVERSION_LF)); //q watch v2.01 beta
@@ -4209,12 +4209,12 @@ Gfx *draw_watch_inventory_page(Gfx *gdl, Mtx *param_2)
             s32 i;
             s32 textheight;
             s32 textwidth;
-            s32 pFontFile2;
-            s32 pFontChars2;
+            struct font *pFontFile2;
+            struct fontchar *pFontChars2;
             char string_builder_allocation[2000];
 
 #if defined(VERSION_JP) || defined(VERSION_EU)
-            s32 pFontFile;
+            struct font *pFontFile;
             s32 base_y;
             char formattedString[32];
 #endif
@@ -4282,9 +4282,9 @@ Gfx *draw_watch_inventory_page(Gfx *gdl, Mtx *param_2)
             {
 #if !defined(VERSION_JP) && !defined(VERSION_EU)
                 char formattedString[32];
-                s32 pFontFile;
+                struct font *pFontFile;
 #endif
-                s32 pFontChars;
+                struct fontchar *pFontChars;
                 s32 x2;
                 s32 y2;
                 char *invItemName;
@@ -4338,8 +4338,8 @@ Gfx *unused_draw_watch_inventory_page(Gfx *gdl, Mtx *param_2) {
     s32 sp5C;
     s32 sp58;
     s32 sp54;
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
 
     u16 *long_name;
     s32 temp_2;
@@ -5549,8 +5549,8 @@ Gfx *draw_watch_control_options_page(Gfx *gdl, Mtx *param_2) {
     s32 sp58;
     s32 sp54;
     s32 sp50;
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
 
 #ifndef TARGET_N64
     /* This tab is the device picker plus the action list, except for a raphnet
@@ -7866,8 +7866,8 @@ Gfx *draw_watch_game_options_page(Gfx *gdl, Mtx *param_2) {
     s32 sp4C;
     s32 sp48;
 
-    s32 pFontFile;
-    s32 pFontChars;
+    struct font *pFontFile;
+    struct fontchar *pFontChars;
 
     gdl = draw_background_health_and_armor(gdl, param_2, 0);
 

@@ -2323,11 +2323,11 @@ void triggered_on_shot_hit(ChrRecord *self, coord3d *arg1, f32 arg2, s32 req_ani
                     another_flag = 1;
                     something_ani = &g_HitReactionTable[animation_something_index];
 
-                    if (((s32)&g_HitReactionTable[9] == (s32)something_ani) && (temp_left != NULL))
+                    if ((&g_HitReactionTable[9] == something_ani) && (temp_left != NULL))
                     {
                         animation_something_index = 10;
                     }
-                    else if (((s32)&g_HitReactionTable[12] == (s32)something_ani) && (temp_right != NULL))
+                    else if ((&g_HitReactionTable[12] == something_ani) && (temp_right != NULL))
                     {
                         animation_something_index = 13;
                     }

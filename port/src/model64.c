@@ -144,6 +144,7 @@ static void push_off(ModelConv *c, u32 off)
         const u8 *d = c->base + dop;
         switch (op) {
         case 1:
+        case 0x14:
             v = R32(d, 0x04); if (is_wire(v)) push_off(c, wire_off(v));
             break;
         case 2:
@@ -179,7 +180,8 @@ static void conv_rodata(ModelConv *c, union ModelRoData *d, const u8 *w, int op)
     u8 *base = c->base;
 
     switch (op) {
-    case 1: /* Header */
+    case 1:  /* Header */
+    case 0x14: /* Op20: same header layout, a second root style */
         d->Header.AnimPart = R16(w, 0x00);
         d->Header.MatrixIndex = (s16) R16(w, 0x02);
         d->Header.FirstGroupNode = find_node(c, R32(w, 0x04));
